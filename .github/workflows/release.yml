@@ -1,0 +1,71 @@
+name: Release
+
+# 每次推送 tag（如 v0.1.2）时自动触发
+on:
+  push:
+    tags:
+      - 'v*'
+
+# GITHUB_TOKEN 需要 contents: write 权限来创建 Release
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout 代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 安装 Rust 稳定版
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      # 项目级 .cargo/config.toml 使用 rsproxy 国内镜像
+      # CI 环境改为使用 crates.io 官方源，避免镜像不可达
+      - name: 覆盖 cargo 源为 crates.io（CI 环境）
+        shell: pwsh
+        run: |
+          $configPath = ".cargo/config.toml"
+          if (Test-Path $configPath) {
+            Remove-Item $configPath -Force
+            Write-Host "已移除项目级 cargo 配置，使用默认 crates.io 源"
+          }
+
+      - name: 安装前端依赖
+        run: npm ci
+
+      # 使用官方 Tauri Action 构建并发布
+      # 自动完成：前端构建 → Tauri 编译 → 打包 → 上传 Release Asset
+      - name: Tauri 构建并创建 Release
+        uses: tauri-apps/tauri-action@v0
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'FocusLock ${{ github.ref_name }}'
+          releaseBody: |
+            ## FocusLock ${{ github.ref_name }}
+
+            跨平台专注节奏助手——到点强制休息，帮你养成健康的作息节奏。
+
+            ### 更新日志
+            详见 [CHANGELOG.md](https://github.com/weifeng-work/FocusLock/blob/main/CHANGELOG.md)
+
+            ### 安装
+            下载下方 `FocusLock_*_x64-setup.exe`，运行安装即可。**Windows 10+ 适用。**
+
+            ### 技术栈
+            Tauri 2.x / Rust / Vue 3 / TypeScript
+
+            ---
+            > FocusLock - Stay focused, rest well.
+          releaseDraft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
