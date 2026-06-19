@@ -6,6 +6,7 @@
 // - 读写 + 原子写 + 校验 + 非法回退默认
 // - 配置改后不自动生效（保存只写文件，需「重置计时」或重启才生效）
 
+use chrono::{DateTime, Datelike, Duration, Local, NaiveDateTime, NaiveTime, TimeZone, Timelike};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
@@ -543,6 +544,103 @@ impl OldConfig {
             run_as_admin_autostart:       self.run_as_admin_autostart,
             language:                      self.language,
         }
+    }
+}
+
+// ===== 作息表调度辅助方法 =====
+
+impl WeeklyAssignment {
+    /// 根据 chrono Weekday 获取对应的 routine_id
+    pub fn get_routine_id(&self, weekday: chrono::Weekday) -> String {
+        match weekday {
+            chrono::Weekday::Mon => self.monday.clone(),
+            chrono::Weekday::Tue => self.tuesday.clone(),
+            chrono::Weekday::Wed => self.wednesday.clone(),
+            chrono::Weekday::Thu => self.thursday.clone(),
+            chrono::Weekday::Fri => self.friday.clone(),
+            chrono::Weekday::Sat => self.saturday.clone(),
+            chrono::Weekday::Sun => self.sunday.clone(),
+        }
+    }
+}
+
+impl Routine {
+    /// 判断当前本地时间是否落在本作息表的某个时间段内，
+    /// 返回 (period_index, &TimePeriod)；若无匹配返回 None。
+    pub fn active_period(&self, now: NaiveTime) -> Option<(usize, &TimePeriod)> {
+        for (i, p) in self.periods.iter().enumerate() {
+            let start = NaiveTime::from_hms_opt(p.start_hour as u32, p.start_minute as u32, 0).unwrap();
+            let end   = NaiveTime::from_hms_opt(p.end_hour   as u32, p.end_minute   as u32, 0).unwrap();
+            if now >= start && now < end {
+                return Some((i, p));
+            }
+        }
+        None
+    }
+}
+
+impl Config {
+    /// 根据当前本地时间返回当前应使用的方案 ID 和当前时间段索引。
+    /// 若当前不在任何时间段内，返回 None。
+    pub fn resolve_current_schedule(&self, now: chrono::DateTime<chrono::Local>)
+        -> Option<(String, usize)>
+    {
+        let routine_id = self.weekly.get_routine_id(now.weekday());
+        let routine = self.routines.iter().find(|r| r.id == routine_id)?;
+        let naive_time = now.time();
+        let (period_idx, _period) = routine.active_period(naive_time)?;
+        let scheme_id = routine.periods[period_idx].scheme_id.clone();
+        Some((scheme_id, period_idx))
+    }
+
+    /// 返回当前时间所在的 TimePeriod 的结束时间（NaiveTime），
+    /// 用于判断是否需要触发时段结束动作。
+    /// 若不在任何时间段内，返回 None。
+    pub fn current_period_end_time(&self, now: DateTime<Local>)
+        -> Option<NaiveTime>
+    {
+        let routine_id = self.weekly.get_routine_id(now.weekday());
+        let routine = self.routines.iter().find(|r| r.id == routine_id)?;
+        let naive_time = now.time();
+        let (_period_idx, period) = routine.active_period(naive_time)?;
+        Some(NaiveTime::from_hms_opt(
+            period.end_hour as u32, period.end_minute as u32, 0
+        ).unwrap())
+    }
+
+    /// 返回下一个时间段的开始时间（用于等待切换），
+    /// 以及该时间段使用的方案 ID。
+    /// 若当前在所有时间段之外，返回今天下一个时间段的开始时间；
+    /// 若今天没有更多时间段，返回明天第一个时间段的开始时间。
+    pub fn next_period_start(&self, now: DateTime<Local>)
+        -> Option<(DateTime<Local>, String)>
+    {
+        let routine_id = self.weekly.get_routine_id(now.weekday());
+        let routine = self.routines.iter().find(|r| r.id == routine_id)?;
+        let naive_time = now.time();
+
+        // 找今天剩下的时间段
+        for p in &routine.periods {
+            let start = NaiveTime::from_hms_opt(p.start_hour as u32, p.start_minute as u32, 0).unwrap();
+            if start > naive_time {
+                let naive_dt = NaiveDateTime::new(now.date_naive(), start);
+                if let Some(local_dt) = Local.from_local_datetime(&naive_dt).single() {
+                    return Some((local_dt, p.scheme_id.clone()));
+                }
+            }
+        }
+        // 今天没有更多了，找明天第一个
+        let next_day = now + Duration::days(1);
+        let next_routine_id = self.weekly.get_routine_id(next_day.weekday());
+        let next_routine = self.routines.iter().find(|r| r.id == next_routine_id)?;
+        if let Some(p) = next_routine.periods.first() {
+            let start = NaiveTime::from_hms_opt(p.start_hour as u32, p.start_minute as u32, 0).unwrap();
+            let naive_dt = NaiveDateTime::new(next_day.date_naive(), start);
+            if let Some(local_dt) = Local.from_local_datetime(&naive_dt).single() {
+                return Some((local_dt, p.scheme_id.clone()));
+            }
+        }
+        None
     }
 }
 

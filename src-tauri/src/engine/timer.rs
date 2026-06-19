@@ -13,10 +13,13 @@
 // 引擎通过 EngineHandle 暴露操作（pause/resume/skip/reset/get_status），
 // 由 Tauri command 层调用。事件通过 emit 回调发出，由上层桥接到 Tauri event 或通知。
 
-use crate::config::{Config, OverlayStyle, PeriodEndAction, RestReminderMode, Scheme, SoundType, Stage, StageType};
+use crate::config::{
+    Config, OverlayStyle, PeriodEndAction, RestReminderMode, Scheme,
+    SoundType, Stage, StageType,
+};
 use crate::engine::stage::StageCursor;
 use crate::state::{AppState, Status};
-use chrono::Utc;
+use chrono::{DateTime, Datelike, Local, Timelike, Utc};
 use serde::Serialize;
 use std::sync::Arc;
 use std::time::Duration;
@@ -46,6 +49,8 @@ pub enum EngineEvent {
     ResetDueToInactivity,
     /// 播放音效（音效类型：work_end / rest_end）
     PlaySound { sound_type: String },
+    /// 时间段结束，执行时段结束动作（弹窗/全屏/黑屏/无操作）
+    PeriodEndedAction { action: PeriodEndAction },
 }
 
 /// 引擎内部状态
@@ -54,6 +59,10 @@ struct EngineInner {
     state: AppState,
     /// 当前使用的方案 stages 缓存（随 scheme_id 变更而刷新）
     cached_stages: Vec<Stage>,
+    /// 当前生效的作息表 ID（来自 weekly 周配置）
+    current_routine_id: Option<String>,
+    /// 当前所处时间段的索引（若不在任何时间段内则为 None）
+    current_period_idx: Option<usize>,
     /// 当前阶段开始的绝对时间戳（秒）。暂停时不再推进。
     stage_started_at: i64,
     /// 本阶段是否已发过「准备休息」通知（避免重复发）
@@ -240,6 +249,82 @@ impl EngineInner {
     fn persist(&self) -> std::io::Result<()> {
         self.state.save()
     }
+
+    /// 检查作息表调度，需要时切换方案 / 触发时段结束动作。
+    /// 由 tick_loop 每分钟调用一次。
+    pub fn check_schedule(&mut self, now: i64, tx: &tokio::sync::mpsc::UnboundedSender<EngineEvent>) {
+        let now_local = Local::now();
+        let routine_id = self.config.weekly.get_routine_id(now_local.weekday()).to_string();
+        let target = self.config.resolve_current_schedule(now_local);
+
+        match target {
+            Some((ref new_scheme_id, period_idx)) => {
+                let period_changed = self.current_period_idx != Some(period_idx)
+                    || self.current_routine_id.as_deref() != Some(routine_id.as_str());
+
+                // 刚离开上一个时段 → 发送上一个时段的结束动作
+                if period_changed && self.current_period_idx.is_some() {
+                    Self::send_period_end_action(
+                        &self.config,
+                        self.current_routine_id.clone(),
+                        self.current_period_idx,
+                        tx,
+                    );
+                }
+
+                // 方案变了 → 切换到新方案并从第一阶段开始
+                if *new_scheme_id != self.state.scheme_id {
+                    self.state.scheme_id = new_scheme_id.clone();
+                    self.refresh_cached_stages();
+                    self.enter_stage(0, now);
+                    let _ = self.persist();
+                    let _ = tx.send(EngineEvent::WorkStarted {
+                        remaining: self.state.remaining_seconds,
+                    });
+                    let _ = tx.send(EngineEvent::StatusChanged {
+                        status: self.state.status,
+                        remaining: self.state.remaining_seconds,
+                    });
+                }
+
+                self.current_routine_id = Some(routine_id);
+                self.current_period_idx = Some(period_idx);
+            }
+            None => {
+                // 不在任何时间段内（跨时段间隙，如 12:00-14:00）
+                if self.current_period_idx.is_some() {
+                    Self::send_period_end_action(
+                        &self.config,
+                        self.current_routine_id.clone(),
+                        self.current_period_idx,
+                        tx,
+                    );
+                    self.current_period_idx = None;
+                    self.current_routine_id = None;
+                }
+            }
+        }
+    }
+
+    /// 发送上一个时段的结束动作事件（内部辅助方法）
+    fn send_period_end_action(
+        config: &Config,
+        routine_id: Option<String>,
+        period_idx: Option<usize>,
+        tx: &tokio::sync::mpsc::UnboundedSender<EngineEvent>,
+    ) {
+        if let Some(ref rid) = routine_id {
+            if let Some(idx) = period_idx {
+                if let Some(routine) = config.routines.iter().find(|r| r.id == *rid) {
+                    if let Some(period) = routine.periods.get(idx) {
+                        let _ = tx.send(EngineEvent::PeriodEndedAction {
+                            action: period.end_action.clone(),
+                        });
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// 后台 tick 循环 future。由 spawn_engine 返回，调用方负责 spawn（用 tauri::async_runtime::spawn 或 tokio::spawn）。
@@ -276,6 +361,9 @@ async fn tick_loop(
             });
             continue;
         }
+
+        // 检查作息表调度（每分钟自动切换方案 / 触发时段结束动作）
+        g.check_schedule(now, &tx);
 
         // 正常推进
         g.recompute_remaining(now);
@@ -403,6 +491,8 @@ pub fn spawn_engine(
         config: config.clone(),
         state: state.clone(),
         cached_stages: config.stages.clone(),
+        current_routine_id: None,
+        current_period_idx: None,
         stage_started_at: started_at,
         prepare_rest_sent: false,
         last_persist_at: started_at,

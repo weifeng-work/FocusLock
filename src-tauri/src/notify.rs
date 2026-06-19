@@ -110,6 +110,10 @@ pub fn on_engine_event<R: Runtime>(app: &AppHandle<R>, event: &EngineEvent) {
         EngineEvent::PlaySound { .. } => {
             // 音效播放由前端处理，后端只转发事件
         }
+        EngineEvent::PeriodEndedAction { .. } => {
+            // 时段结束动作由前端处理（弹窗/全屏/黑屏）
+            // 不发送系统通知，前端会显示自定义 UI
+        }
     }
 }
 
