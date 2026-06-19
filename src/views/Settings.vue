@@ -2,19 +2,27 @@
 // 配置面板（阶段 6）
 // - 阶段列表编辑器：增删/上下移/改类型/改分钟
 // - rest_reminder_mode 单选（fullscreen / popup）
+// - overlay_style 选择：半透明 / 全黑 / 暗色
+// - rest_message 自定义休息提示词
 // - reset_threshold_minutes、notify_before_work_end_minutes 数字输入
 // - skip_shortcut 文本输入（Tauri accelerator 格式）
 // - Windows 专属：run_as_admin_autostart 开关
+// - 检查更新功能
+// - 微信客服群二维码
 // - 保存 → invoke("save_config") → 提示需重置/重启生效
 
 import { ref, computed, onMounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import type { Config, Stage, StageType, RestReminderMode } from "../types";
+import type { Config, Stage, StageType, RestReminderMode, OverlayStyle } from "../types";
 
 const config = ref<Config | null>(null);
 const saving = ref(false);
 const message = ref<{ type: "ok" | "warn" | "err"; text: string } | null>(null);
 const isMac = navigator.platform.toUpperCase().includes("MAC");
+
+// 检查更新相关状态
+const checkingUpdate = ref(false);
+const updateResult = ref<{ type: "ok" | "warn" | "err" | "info"; text: string } | null>(null);
 
 async function load() {
   config.value = await invoke<Config>("get_config");
@@ -65,6 +73,29 @@ async function onSave() {
 async function onResetTimer() {
   await invoke("reset_timer");
   message.value = { type: "ok", text: "已重置计时，新配置立即生效" };
+}
+
+async function onCheckUpdate() {
+  checkingUpdate.value = true;
+  updateResult.value = null;
+  try {
+    const result = await invoke<{ current: string; latest: string; url: string; has_update: boolean }>("check_update");
+    if (result.has_update) {
+      updateResult.value = {
+        type: "warn",
+        text: `发现新版本 ${result.latest}（当前 v${result.current}）`,
+      };
+    } else {
+      updateResult.value = {
+        type: "ok",
+        text: `已是最新版本 v${result.current}`,
+      };
+    }
+  } catch (e) {
+    updateResult.value = { type: "err", text: `检查失败：${String(e)}` };
+  } finally {
+    checkingUpdate.value = false;
+  }
 }
 
 function stageLabel(t: StageType) {
@@ -129,6 +160,44 @@ function stageColor(t: StageType) {
       </label>
     </section>
 
+    <!-- 遮罩样式（仅 fullscreen 时有意义） -->
+    <section v-if="config.rest_reminder_mode === 'fullscreen'">
+      <h2>遮罩样式</h2>
+      <div class="style-options">
+        <label class="radio style-option" :class="{ active: config.overlay_style === 'semi_transparent' }">
+          <input type="radio" v-model="config.overlay_style" value="semi_transparent" />
+          <div class="style-preview semi-transparent-preview">半透明黑底</div>
+          <span>半透明（默认）</span>
+        </label>
+        <label class="radio style-option" :class="{ active: config.overlay_style === 'full_black' }">
+          <input type="radio" v-model="config.overlay_style" value="full_black" />
+          <div class="style-preview full-black-preview">纯黑不透明</div>
+          <span>全黑</span>
+        </label>
+        <label class="radio style-option" :class="{ active: config.overlay_style === 'dark' }">
+          <input type="radio" v-model="config.overlay_style" value="dark" />
+          <div class="style-preview dark-preview">暗色调</div>
+          <span>暗色</span>
+        </label>
+      </div>
+    </section>
+
+    <!-- 自定义休息提示词 -->
+    <section>
+      <h2>休息提示词</h2>
+      <div class="field">
+        <input
+          type="text"
+          v-model="config.rest_message"
+          placeholder="现在休息"
+          maxlength="20"
+          class="message-input"
+        />
+        <span class="unit">{{ config.rest_message.length }}/20 字</span>
+      </div>
+      <p class="hint">休息遮罩顶部显示的自定义文字，留空默认显示「现在休息」</p>
+    </section>
+
     <!-- 数值参数 -->
     <section>
       <h2>计时参数</h2>
@@ -164,6 +233,24 @@ function stageColor(t: StageType) {
       <p class="hint">默认关闭。开启后可覆盖任务管理器等管理员程序，代价是开机时弹 UAC 确认。</p>
     </section>
 
+    <!-- 检查更新 -->
+    <section>
+      <h2>关于与更新</h2>
+      <div class="update-bar">
+        <button
+          class="btn-secondary"
+          :disabled="checkingUpdate"
+          @click="onCheckUpdate"
+        >
+          {{ checkingUpdate ? "检查中…" : "检查更新" }}
+        </button>
+        <a href="https://github.com/weifeng-work/FocusLock/releases" target="_blank" class="update-link">
+          GitHub 发布页 →
+        </a>
+      </div>
+      <div v-if="updateResult" :class="['msg', 'inline', updateResult.type]">{{ updateResult.text }}</div>
+    </section>
+
     <!-- 操作 -->
     <section class="actions-bar">
       <button class="btn-primary" :disabled="saving || !stagesValid" @click="onSave">
@@ -173,6 +260,14 @@ function stageColor(t: StageType) {
     </section>
 
     <div v-if="message" :class="['msg', message.type]">{{ message.text }}</div>
+
+    <!-- 微信客服群 -->
+    <section class="footer-section">
+      <div class="wechat-section">
+        <p class="wechat-hint">扫码加入 FocusLock 微信客服群，获取帮助 / 提反馈 / 参与讨论</p>
+        <img src="/wechat-qrcode.png" alt="FocusLock 微信客服群" class="wechat-qr" />
+      </div>
+    </section>
   </div>
 </template>
 
@@ -316,6 +411,10 @@ section {
   border-radius: 4px;
   font-family: ui-monospace, monospace;
 }
+.message-input {
+  max-width: 200px !important;
+  font-family: inherit !important;
+}
 .actions-bar {
   display: flex;
   gap: 10px;
@@ -359,5 +458,105 @@ section {
 .msg.err {
   background: #faece7;
   color: #993c1d;
+}
+.msg.info {
+  background: #e8ecf4;
+  color: #334e7a;
+}
+.msg.inline {
+  display: inline-block;
+  margin-top: 8px;
+}
+
+/* 遮罩样式预览 */
+.style-options {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.style-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1.5px solid transparent;
+  transition: all 0.15s;
+}
+.style-option.active {
+  border-color: #185fa5;
+  background: #f0f6fc;
+}
+.style-option input[type="radio"] {
+  display: none;
+}
+.style-preview {
+  width: 72px;
+  height: 48px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  color: #fff;
+  font-weight: 500;
+}
+.semi-transparent-preview {
+  background: rgba(0, 0, 0, 0.85);
+  /* 用棋盘格暗示透明 */
+  background-image:
+    linear-gradient(45deg, rgba(60, 60, 60, 0.15) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(60, 60, 60, 0.15) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(60, 60, 60, 0.15) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(60, 60, 60, 0.15) 75%);
+  background-size: 8px 8px;
+  background-color: rgba(0, 0, 0, 0.88);
+  color: rgba(255, 255, 255, 0.8);
+}
+.full-black-preview {
+  background: #000000;
+}
+.dark-preview {
+  background: #121218;
+}
+
+/* 检查更新 */
+.update-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.update-link {
+  font-size: 12px;
+  color: #185fa5;
+  text-decoration: none;
+}
+.update-link:hover {
+  text-decoration: underline;
+}
+
+/* 底部微信区域 */
+.footer-section {
+  border-bottom: none;
+  text-align: center;
+}
+.wechat-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.wechat-hint {
+  font-size: 12px;
+  color: #5f5e5a;
+  margin: 0;
+}
+.wechat-qr {
+  width: 160px;
+  height: 160px;
+  border: 1px solid #d3d1c7;
+  border-radius: 8px;
+  object-fit: contain;
 }
 </style>

@@ -8,6 +8,19 @@ use crate::state::Status;
 use chrono::Utc;
 use serde::Serialize;
 
+/// 检查更新响应
+#[derive(Debug, Clone, Serialize)]
+pub struct UpdateCheckResponse {
+    /// 当前安装版本
+    pub current: String,
+    /// GitHub 最新版本 tag
+    pub latest: String,
+    /// 最新版 Release 页面 URL
+    pub url: String,
+    /// 是否有新版本可用
+    pub has_update: bool,
+}
+
 /// 前端可读的状态响应
 #[derive(Debug, Clone, Serialize)]
 pub struct StatusResponse {
@@ -113,4 +126,54 @@ pub async fn save_config(
 pub async fn get_config() -> Result<crate::config::Config, String> {
     let (config, _fallback) = crate::config::Config::load();
     Ok(config)
+}
+
+/// 检查更新：查询 GitHub releases API 获取最新版本信息
+#[tauri::command]
+pub async fn check_update(app: tauri::AppHandle) -> Result<UpdateCheckResponse, String> {
+    // 从 tauri.conf.json 读取当前版本
+    let current = app.config().version.clone().unwrap_or_else(|| "0.0.0".into());
+
+    // 调用 GitHub Releases API
+    let client = reqwest::Client::builder()
+        .user_agent("FocusLock")
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+
+    let resp = client
+        .get("https://api.github.com/repos/weifeng-work/FocusLock/releases/latest")
+        .send()
+        .await
+        .map_err(|e| format!("请求 GitHub API 失败: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("GitHub API 返回错误: HTTP {}", resp.status()));
+    }
+
+    #[derive(Deserialize)]
+    struct GhRelease {
+        tag_name: String,
+        html_url: String,
+    }
+
+    use serde::Deserialize;
+
+    let release: GhRelease = resp
+        .json()
+        .await
+        .map_err(|e| format!("解析 GitHub 响应失败: {}", e))?;
+
+    // 去掉 v 前缀后比较
+    let latest_clean = release.tag_name.trim_start_matches('v').to_string();
+    let current_clean = current.trim_start_matches('v').to_string();
+
+    // 简单版本号字符串比较（语义化版本）
+    let has_update = latest_clean != current_clean;
+
+    Ok(UpdateCheckResponse {
+        current: current_clean,
+        latest: latest_clean,
+        url: release.html_url,
+        has_update,
+    })
 }

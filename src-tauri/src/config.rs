@@ -39,6 +39,18 @@ pub enum RestReminderMode {
     Popup,
 }
 
+/// 遮罩样式（仅 fullscreen 模式生效）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OverlayStyle {
+    /// 半透明黑底（默认，当前效果）
+    SemiTransparent,
+    /// 纯黑不透明
+    FullBlack,
+    /// 深色暗调
+    Dark,
+}
+
 /// 应用配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -46,6 +58,12 @@ pub struct Config {
     pub stages: Vec<Stage>,
     /// 休息提醒模式
     pub rest_reminder_mode: RestReminderMode,
+    /// 遮罩样式（仅 fullscreen 模式生效）
+    #[serde(default = "default_overlay_style")]
+    pub overlay_style: OverlayStyle,
+    /// 休息遮罩显示的自定义提示词
+    #[serde(default = "default_rest_message")]
+    pub rest_message: String,
     /// 过夜/长时间离开重置阈值（分钟）
     pub reset_threshold_minutes: u32,
     /// 工作结束前 N 分钟发准备休息通知
@@ -57,9 +75,17 @@ pub struct Config {
     pub run_as_admin_autostart: bool,
 }
 
+fn default_overlay_style() -> OverlayStyle {
+    OverlayStyle::SemiTransparent
+}
+
+fn default_rest_message() -> String {
+    "现在休息".to_string()
+}
+
 impl Default for Config {
     fn default() -> Self {
-        // 默认配置：工作 45 / 休息 15，fullscreen，阈值 30 分钟
+        // 默认配置：工作 45 / 休息 15，fullscreen，半透明遮罩，阈值 30 分钟
         Self {
             stages: vec![
                 Stage {
@@ -72,6 +98,8 @@ impl Default for Config {
                 },
             ],
             rest_reminder_mode: RestReminderMode::Fullscreen,
+            overlay_style: OverlayStyle::SemiTransparent,
+            rest_message: "现在休息".to_string(),
             reset_threshold_minutes: 30,
             notify_before_work_end_minutes: 1,
             skip_shortcut: "CmdOrCtrl+Shift+F2".to_string(),

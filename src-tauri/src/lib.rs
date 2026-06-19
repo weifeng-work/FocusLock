@@ -209,6 +209,7 @@ pub fn run() {
             commands::reset_timer,
             commands::save_config,
             commands::get_config,
+            commands::check_update,
         ])
         .run(tauri::generate_context!())
         .expect("FocusLock 启动失败");
