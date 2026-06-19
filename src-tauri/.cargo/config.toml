@@ -1,0 +1,12 @@
+# FocusLock 项目级 cargo 配置
+# 覆盖全局 ~/.cargo/config.toml 中失效的 rsproxy git 镜像
+# 改用 rsproxy sparse index（国内加速 + 协议正确），仅对本项目生效，不影响其他 Tauri 项目
+
+[source.crates-io]
+replace-with = "rsproxy-sparse"
+
+[source.rsproxy-sparse]
+registry = "sparse+https://rsproxy.cn/index/"
+
+[net]
+git-fetch-with-cli = true

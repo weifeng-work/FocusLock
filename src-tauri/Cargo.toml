@@ -1,0 +1,63 @@
+[package]
+name = "focuslock"
+version = "0.1.1"
+description = "自定义循环、到点即强休的跨平台专注助手"
+authors = ["FocusLock"]
+edition = "2021"
+rust-version = "1.77"
+
+# 库定义：Tauri 移动端需要 lib target，桌面端也会用到
+[lib]
+name = "focuslock_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-autostart = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-single-instance = "2"
+
+# 序列化
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 异步运行时（计时引擎核心依赖）
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "fs"] }
+
+# 跨平台数据目录
+dirs = "5"
+
+# 文件监听（config 热重载预留；当前策略为手动重置生效，但保留依赖）
+notify = "6"
+
+# 日志
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# 时间
+chrono = { version = "0.4", features = ["serde"] }
+
+# 平台特定依赖
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Power",
+    "Win32_System_SystemInformation",
+] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# macOS 后端用 objc2 系列访问 NSScreen / NSWorkspace
+objc2 = "0.5"
+objc2-foundation = { version = "0.2", features = ["NSNotification", "NSString"] }
+objc2-app-kit = { version = "0.2", features = ["NSScreen", "NSWorkspace", "NSApplication"] }
+
+[features]
+# 默认特性
+default = []

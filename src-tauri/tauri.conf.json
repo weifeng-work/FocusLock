@@ -1,0 +1,46 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "FocusLock",
+  "version": "0.1.1",
+  "identifier": "com.focuslock.app",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://127.0.0.1:4317",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "FocusLock",
+        "width": 560,
+        "height": 640,
+        "resizable": true,
+        "visible": false,
+        "center": true,
+        "decorations": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "dmg"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "publisher": "FocusLock",
+    "category": "Productivity",
+    "shortDescription": "自定义循环、到点即强休的专注助手",
+    "longDescription": "FocusLock 是一款轻量级专注节奏管理工具，通过自定义工作/休息阶段循环，到点以全屏遮罩或弹窗强休，帮你守住节奏。"
+  },
+  "plugins": {}
+}
