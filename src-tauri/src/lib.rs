@@ -147,6 +147,11 @@ pub fn run() {
                         EngineEvent::RestEnded | EngineEvent::RestSkipped => {
                             overlay_mgr_for_task.close_all(&app_handle).await;
                         }
+                        EngineEvent::PeriodEndedAction { action } => {
+                            // 关闭常规遮罩，避免和时段结束的自定义提示叠加
+                            overlay_mgr_for_task.close_all(&app_handle).await;
+                            tracing::info!("时段结束动作: {:?}", action);
+                        }
                         EngineEvent::StatusChanged { status, .. } => {
                             if *status == Status::Paused {
                                 overlay_mgr_for_task.close_all(&app_handle).await;

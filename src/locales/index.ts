@@ -13,8 +13,8 @@ const messages: Record<Locale, Messages> = { zh, en };
 // 当前语言（响应式）
 export const currentLocale = ref<Locale>("zh");
 
-// 获取翻译
-export function t(key: string): string {
+// 获取翻译（支持简单占位符替换：{key}）
+export function t(key: string, params?: Record<string, string | number>): string {
   const locale = currentLocale.value;
   const msg = messages[locale] || messages.zh;
 
@@ -28,7 +28,14 @@ export function t(key: string): string {
       return key; // 键不存在，返回原键
     }
   }
-  return typeof result === "string" ? result : key;
+  if (typeof result !== "string") return key;
+  // 占位符替换
+  if (params) {
+    return result.replace(/\{(\w+)\}/g, (_, k) =>
+      k in params ? String(params[k]) : `{${k}}`
+    );
+  }
+  return result;
 }
 
 // 切换语言

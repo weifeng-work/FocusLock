@@ -1,16 +1,21 @@
 <script setup lang="ts">
-// 根组件：承载 router-view，监听全局引擎事件并播放音效
-import { onMounted, onUnmounted } from "vue";
+// 根组件：承载 router-view，监听全局引擎事件
+// 1. 播放音效（work_end / rest_end）
+// 2. 处理时段结束动作（PeriodEndAction）：popup / fullscreen / black_screen
+import { onMounted, onUnmounted, ref } from "vue";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { handlePlaySoundEvent } from "./utils/sound";
 import { initLocale } from "./locales";
+import PeriodEndOverlay from "./views/PeriodEndOverlay.vue";
+import type { PeriodEndAction } from "./types";
 
 let unlisten: UnlistenFn | null = null;
+const periodAction = ref<PeriodEndAction | null>(null);
 
 onMounted(async () => {
   await initLocale();
 
-  // 监听引擎事件，播放音效 + 处理时段结束动作
+  // 监听引擎事件
   unlisten = await listen<{ type: string; [key: string]: any }>(
     "engine-event",
     (event) => {
@@ -21,28 +26,18 @@ onMounted(async () => {
           handlePlaySoundEvent(soundType);
         }
       } else if (payload.type === "period_ended_action") {
-        handlePeriodEndAction(payload.action);
+        // 后端发来 { action: PeriodEndAction, ... }
+        const action = payload.action;
+        if (action) {
+          periodAction.value = action;
+        }
       }
     }
   );
 });
 
-function handlePeriodEndAction(action: any) {
-  if (!action) return;
-  if (action.type === "none") return;
-  // 基础实现：用 alert 显示时段结束提示
-  if (action.type === "popup" || action.type === "fullscreen" || action.type === "black_screen") {
-    const text = action.text || "时段结束";
-    alert(`FocusLock\n${text}`);
-    // 播放提示音
-    if (action.sound) {
-      const sound = action.sound;
-      if (sound !== "none") {
-        const soundType = sound === "builtin" ? "builtin" : `custom:${sound.custom}`;
-        handlePlaySoundEvent(soundType);
-      }
-    }
-  }
+function closePeriodOverlay() {
+  periodAction.value = null;
 }
 
 onUnmounted(() => {
@@ -52,6 +47,7 @@ onUnmounted(() => {
 
 <template>
   <router-view />
+  <PeriodEndOverlay :action="periodAction" @close="closePeriodOverlay" />
 </template>
 
 <style>
