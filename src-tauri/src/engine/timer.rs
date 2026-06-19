@@ -13,7 +13,7 @@
 // 引擎通过 EngineHandle 暴露操作（pause/resume/skip/reset/get_status），
 // 由 Tauri command 层调用。事件通过 emit 回调发出，由上层桥接到 Tauri event 或通知。
 
-use crate::config::{Config, RestReminderMode, StageType};
+use crate::config::{Config, OverlayStyle, PeriodEndAction, RestReminderMode, Scheme, SoundType, Stage, StageType};
 use crate::engine::stage::StageCursor;
 use crate::state::{AppState, Status};
 use chrono::Utc;
@@ -44,12 +44,16 @@ pub enum EngineEvent {
     StatusChanged { status: Status, remaining: u64 },
     /// 检测到长时间离开，已重置
     ResetDueToInactivity,
+    /// 播放音效（音效类型：work_end / rest_end）
+    PlaySound { sound_type: String },
 }
 
 /// 引擎内部状态
 struct EngineInner {
     config: Config,
     state: AppState,
+    /// 当前使用的方案 stages 缓存（随 scheme_id 变更而刷新）
+    cached_stages: Vec<Stage>,
     /// 当前阶段开始的绝对时间戳（秒）。暂停时不再推进。
     stage_started_at: i64,
     /// 本阶段是否已发过「准备休息」通知（避免重复发）
@@ -110,7 +114,8 @@ impl EngineHandle {
             return false;
         }
         // 恢复时重设 stage_started_at，使 remaining 从冻结值继续推进
-        let total = StageCursor::new(&g.config.stages, g.state.current_stage_index)
+        g.refresh_cached_stages();
+        let total = StageCursor::new(&g.cached_stages, g.state.current_stage_index)
             .current_total_seconds();
         let elapsed = total.saturating_sub(g.state.remaining_seconds);
         g.stage_started_at = now - elapsed as i64;
@@ -137,7 +142,7 @@ impl EngineHandle {
         if g.state.status != Status::Resting {
             return false;
         }
-        let cursor = StageCursor::new(&g.config.stages, g.state.current_stage_index);
+        let cursor = StageCursor::new(&g.cached_stages, g.state.current_stage_index);
         let (new_index, _skipped) = cursor.skip_rest_to_next_work();
         g.enter_stage(new_index, now);
         let remaining = g.state.remaining_seconds;
@@ -177,8 +182,28 @@ impl EngineHandle {
 }
 
 impl EngineInner {
+    /// 根据 state.scheme_id 刷新 cached_stages
+    fn refresh_cached_stages(&mut self) {
+        self.cached_stages = self
+            .config
+            .schemes
+            .iter()
+            .find(|s| s.id == self.state.scheme_id)
+            .map(|s| s.stages.clone())
+            .unwrap_or_else(|| {
+                // 找不到方案时 fallback 到第一个方案
+                tracing::warn!("方案 {} 未找到，fallback 到第一个方案", self.state.scheme_id);
+                self.config.schemes.first().cloned().map(|s| s.stages).unwrap_or_default()
+            });
+    }
+
     fn current_stage_type(&self) -> StageType {
-        self.config.stages[self.state.current_stage_index].stage_type
+        self.cached_stages[self.state.current_stage_index].stage_type
+    }
+
+    /// 获取当前方案（根据 state.scheme_id）
+    fn current_scheme(&self) -> Option<&Scheme> {
+        self.config.schemes.iter().find(|s| s.id == self.state.scheme_id)
     }
 
     /// 基于系统时间戳重新计算 remaining_seconds
@@ -186,19 +211,23 @@ impl EngineInner {
         if self.state.status == Status::Paused {
             return; // 暂停时不动
         }
-        let total = StageCursor::new(&self.config.stages, self.state.current_stage_index)
+        let total = StageCursor::new(&self.cached_stages, self.state.current_stage_index)
             .current_total_seconds();
         let elapsed = (now - self.stage_started_at).max(0) as u64;
         self.state.remaining_seconds = total.saturating_sub(elapsed);
     }
 
     /// 进入指定阶段：设置 index、started_at、remaining、status、清 prepare_rest_sent
+    /// 若 scheme_id 与 state 中不同，先刷新 cached_stages
     fn enter_stage(&mut self, index: usize, now: i64) {
+        // 检查当前方案名是否与 state 中的一致（供外部在切换方案后调用）
+        self.refresh_cached_stages();
+
         self.state.current_stage_index = index;
         self.stage_started_at = now;
-        let total = StageCursor::new(&self.config.stages, index).current_total_seconds();
+        let total = StageCursor::new(&self.cached_stages, index).current_total_seconds();
         self.state.remaining_seconds = total;
-        self.state.status = if self.config.stages[index].stage_type == StageType::Work {
+        self.state.status = if self.cached_stages[index].stage_type == StageType::Work {
             Status::Running
         } else {
             Status::Resting
@@ -263,8 +292,8 @@ async fn tick_loop(
                         remaining: g.state.remaining_seconds,
                     });
                 }
-                if g.state.remaining_seconds == 0 {
-                    let next = StageCursor::new(&g.config.stages, g.state.current_stage_index)
+        if g.state.remaining_seconds == 0 {
+                    let next = StageCursor::new(&g.cached_stages, g.state.current_stage_index)
                         .advance();
                     g.enter_stage(next, now);
                     let _ = g.persist();
@@ -273,9 +302,26 @@ async fn tick_loop(
                             remaining: g.state.remaining_seconds,
                         });
                     } else {
+                        // 发送工作结束提示音事件（从当前方案获取）
+                        if let Some(scheme) = g.current_scheme() {
+                            let sound = &scheme.work_end_sound;
+                            let sound_str = match sound {
+                                SoundType::None => "none".to_string(),
+                                SoundType::Builtin => "builtin".to_string(),
+                                SoundType::Custom(f) => format!("custom:{}", f),
+                            };
+                            if sound_str != "none" {
+                                let _ = tx.send(EngineEvent::PlaySound {
+                                    sound_type: format!("work_end:{}", sound_str),
+                                });
+                            }
+                        }
+                        let mode = g.current_scheme()
+                            .map(|s| s.rest_reminder_mode)
+                            .unwrap_or(crate::config::RestReminderMode::Fullscreen);
                         let _ = tx.send(EngineEvent::RestStarted {
                             remaining: g.state.remaining_seconds,
-                            mode: g.config.rest_reminder_mode,
+                            mode,
                         });
                     }
                     let _ = tx.send(EngineEvent::StatusChanged {
@@ -285,9 +331,25 @@ async fn tick_loop(
                 }
             }
             Status::Resting => {
-                if g.state.remaining_seconds == 0 {
-                    let next = StageCursor::new(&g.config.stages, g.state.current_stage_index)
+            if g.state.remaining_seconds == 0 {
+                    let next = StageCursor::new(&g.cached_stages, g.state.current_stage_index)
                         .advance();
+                    // 发送休息结束提示音事件
+                    let sound = if let Some(scheme) = g.current_scheme() {
+                        &scheme.rest_end_sound
+                    } else {
+                        &crate::config::SoundType::Builtin
+                    };
+                    let sound_str = match sound {
+                        crate::config::SoundType::None => "none".to_string(),
+                        crate::config::SoundType::Builtin => "builtin".to_string(),
+                        crate::config::SoundType::Custom(f) => format!("custom:{}", f),
+                    };
+                    if sound_str != "none" {
+                        let _ = tx.send(EngineEvent::PlaySound {
+                            sound_type: format!("rest_end:{}", sound_str),
+                        });
+                    }
                     let _ = tx.send(EngineEvent::RestEnded);
                     g.enter_stage(next, now);
                     let _ = g.persist();
@@ -296,9 +358,12 @@ async fn tick_loop(
                             remaining: g.state.remaining_seconds,
                         });
                     } else {
+                        let mode = g.current_scheme()
+                            .map(|s| s.rest_reminder_mode)
+                            .unwrap_or(crate::config::RestReminderMode::Fullscreen);
                         let _ = tx.send(EngineEvent::RestStarted {
                             remaining: g.state.remaining_seconds,
-                            mode: g.config.rest_reminder_mode,
+                            mode,
                         });
                     }
                     let _ = tx.send(EngineEvent::StatusChanged {
@@ -336,7 +401,8 @@ pub fn spawn_engine(
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     let inner = Arc::new(Mutex::new(EngineInner {
         config: config.clone(),
-        state,
+        state: state.clone(),
+        cached_stages: config.stages.clone(),
         stage_started_at: started_at,
         prepare_rest_sent: false,
         last_persist_at: started_at,

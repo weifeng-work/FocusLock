@@ -23,6 +23,9 @@ use tauri::{
 const MENU_PAUSE_RESUME: &str = "pause_resume";
 const MENU_RESET: &str = "reset";
 const MENU_SETTINGS: &str = "settings";
+const MENU_LANGUAGE: &str = "language";
+const MENU_LANGUAGE_ZH: &str = "language_zh";
+const MENU_LANGUAGE_EN: &str = "language_en";
 const MENU_QUIT: &str = "quit";
 
 /// 三状态图标 RGBA 数据（32x32，编译期内嵌）

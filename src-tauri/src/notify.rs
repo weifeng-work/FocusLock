@@ -107,6 +107,9 @@ pub fn on_engine_event<R: Runtime>(app: &AppHandle<R>, event: &EngineEvent) {
                 "已重置计时，从第一阶段重新开始。",
             );
         }
+        EngineEvent::PlaySound { .. } => {
+            // 音效播放由前端处理，后端只转发事件
+        }
     }
 }
 

@@ -112,8 +112,10 @@ pub fn run() {
                 tracing::warn!("配置非法已回退默认，建议用户检查 config.json");
             }
             let skip_accelerator = config.skip_shortcut.clone();
-            // 提前读取遮罩模式（config 会被 move 给 spawn_engine）
-            let fullscreen = matches!(config.rest_reminder_mode, RestReminderMode::Fullscreen);
+            // 提前读取遮罩模式（从当前方案获取，config 会被 move 给 spawn_engine）
+            let fullscreen = config.schemes.first()
+                .map(|s| matches!(s.rest_reminder_mode, RestReminderMode::Fullscreen))
+                .unwrap_or(true);
             let (state, started_at) = bootstrap_state(&config);
 
             // 2. 启动计时引擎
@@ -210,6 +212,10 @@ pub fn run() {
             commands::save_config,
             commands::get_config,
             commands::check_update,
+            commands::copy_custom_sound,
+            commands::get_sound_files,
+            commands::delete_sound_file,
+            commands::get_app_data_dir,
         ])
         .run(tauri::generate_context!())
         .expect("FocusLock 启动失败");

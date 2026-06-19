@@ -1,6 +1,6 @@
 [package]
 name = "focuslock"
-version = "0.1.1"
+version = "0.1.2"
 description = "自定义循环、到点即强休的跨平台专注助手"
 authors = ["FocusLock"]
 edition = "2021"
@@ -44,6 +44,9 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # HTTP 客户端（检查更新用）
 reqwest = { version = "0.12", features = ["json"] }
+
+# base64 编码
+base64 = "0.22"
 
 # 平台特定依赖
 [target.'cfg(windows)'.dependencies]

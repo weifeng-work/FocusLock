@@ -177,3 +177,165 @@ pub async fn check_update(app: tauri::AppHandle) -> Result<UpdateCheckResponse, 
         has_update,
     })
 }
+
+/// 音效文件信息（前端用）
+#[derive(Debug, Clone, Serialize)]
+pub struct SoundFileInfo {
+    pub name: String,
+    pub file: String,
+    pub path: String,
+}
+
+/// 复制自定义音效文件到应用数据目录
+#[tauri::command]
+pub async fn copy_custom_sound(source_path: String) -> Result<SoundFileInfo, String> {
+    use std::path::Path;
+    use tokio::fs;
+    use tokio::io::AsyncWriteExt;
+
+    let source = Path::new(&source_path);
+    if !source.exists() {
+        return Err("源文件不存在".to_string());
+    }
+
+    // 检查文件扩展名
+    let ext = source
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    if !["mp3", "wav", "aac", "ogg", "flac", "m4a"].contains(&ext.as_str()) {
+        return Err("不支持的音频格式，请选择 mp3/wav/aac/ogg/flac/m4a 文件".to_string());
+    }
+
+    // 目标目录：%APPDATA%/FocusLock/sounds/
+    let sounds_dir = crate::config::Config::data_dir().join("sounds");
+    fs::create_dir_all(&sounds_dir)
+        .await
+        .map_err(|e| format!("创建音效目录失败: {}", e))?;
+
+    let file_name = source
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or("无效的文件名")?;
+    let dest = sounds_dir.join(file_name);
+
+    // 复制文件
+    fs::copy(source, &dest)
+        .await
+        .map_err(|e| format!("复制文件失败: {}", e))?;
+
+    let display_name = source
+        .file_stem()
+        .and_then(|n| n.to_str())
+        .unwrap_or(file_name)
+        .to_string();
+
+    Ok(SoundFileInfo {
+        name: display_name,
+        file: file_name.to_string(),
+        path: dest.to_string_lossy().to_string(),
+    })
+}
+
+/// 获取已保存的自定义音效列表
+#[tauri::command]
+pub async fn get_sound_files() -> Result<Vec<SoundFileInfo>, String> {
+    use std::path::Path;
+    use tokio::fs;
+
+    let sounds_dir = crate::config::Config::data_dir().join("sounds");
+
+    if !sounds_dir.exists() {
+        return Ok(vec![]);
+    }
+
+    let mut files = vec![];
+    let mut entries = fs::read_dir(&sounds_dir)
+        .await
+        .map_err(|e| format!("读取音效目录失败: {}", e))?;
+
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .map_err(|e| format!("读取目录项失败: {}", e))?
+    {
+        let path = entry.path();
+        if path.is_file() {
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            if ["mp3", "wav", "aac", "ogg", "flac", "m4a"].contains(&ext.as_str()) {
+                let file_name = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("")
+                    .to_string();
+                let display_name = path
+                    .file_stem()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or(&file_name)
+                    .to_string();
+                files.push(SoundFileInfo {
+                    name: display_name,
+                    file: file_name,
+                    path: path.to_string_lossy().to_string(),
+                });
+            }
+        }
+    }
+
+    Ok(files)
+}
+
+/// 删除自定义音效文件
+#[tauri::command]
+pub async fn delete_sound_file(file_name: String) -> Result<bool, String> {
+    use std::path::Path;
+    use tokio::fs;
+
+    let sounds_dir = crate::config::Config::data_dir().join("sounds");
+    let file_path = sounds_dir.join(&file_name);
+
+    if !file_path.exists() {
+        return Err("文件不存在".to_string());
+    }
+
+    fs::remove_file(&file_path)
+        .await
+        .map_err(|e| format!("删除文件失败: {}", e))?;
+
+    Ok(true)
+}
+
+/// 获取应用数据目录路径（前端用它构建音频文件 URL）
+#[tauri::command]
+pub async fn get_app_data_dir() -> Result<String, String> {
+    let dir = crate::config::Config::data_dir();
+    Ok(dir.to_string_lossy().to_string())
+}
+
+/// 读取音效文件并返回 base64 编码
+#[tauri::command]
+pub async fn read_sound_file(file_name: String) -> Result<String, String> {
+    use std::path::Path;
+    use tokio::fs;
+
+    let sounds_dir = crate::config::Config::data_dir().join("sounds");
+    let file_path = sounds_dir.join(&file_name);
+
+    if !file_path.exists() {
+        return Err("文件不存在".to_string());
+    }
+
+    // 读取文件
+    let data = fs::read(&file_path)
+        .await
+        .map_err(|e| format!("读取文件失败: {}", e))?;
+
+    // 转换为 base64
+    let base64 = base64::encode(&data);
+    Ok(base64)
+}

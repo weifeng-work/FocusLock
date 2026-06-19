@@ -47,8 +47,15 @@ onMounted(async () => {
   // 加载配置获取遮罩样式和提示词
   try {
     const cfg = await invoke<Config>("get_config");
-    overlayStyle.value = cfg.overlay_style;
-    restMessage.value = cfg.rest_message || "现在休息";
+    // 使用第一个方案的设置（临时方案）
+    const currentScheme = cfg.schemes[0];
+    if (currentScheme) {
+      overlayStyle.value = currentScheme.rest_reminder_mode === "fullscreen"
+        ? "semi_transparent"
+        : "semi_transparent"; // popup 模式也使用半透明
+      // 注意：rest_message 现在在 TimePeriod.end_action 中，这里暂时使用默认值
+      restMessage.value = "现在休息";
+    }
   } catch {
     // 配置读取失败时使用默认值
   }

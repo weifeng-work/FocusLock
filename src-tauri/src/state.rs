@@ -25,10 +25,12 @@ pub enum Status {
     Resting,
 }
 
-/// 持久化状态
+/// 持久化状态（v2：支持多方案/作息表）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppState {
-    /// 当前在 stages 数组中的索引
+    /// 当前使用的方案 ID
+    pub scheme_id: String,
+    /// 当前在方案 stages 数组中的索引
     pub current_stage_index: usize,
     /// 当前状态
     pub status: Status,
@@ -77,6 +79,7 @@ impl AppState {
     /// 初始化为第一阶段开始
     pub fn fresh_first_stage(stage_seconds: u64, now_timestamp: i64) -> Self {
         Self {
+            scheme_id: "pomodoro".to_string(), // 默认使用番茄工作法方案
             current_stage_index: 0,
             status: Status::Running,
             last_active_timestamp: now_timestamp,
