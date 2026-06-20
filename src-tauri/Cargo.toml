@@ -1,6 +1,6 @@
 [package]
 name = "focuslock"
-version = "0.1.4"
+version = "0.1.5"
 description = "自定义循环、到点即强休的跨平台专注助手"
 authors = ["FocusLock"]
 edition = "2021"
@@ -16,11 +16,15 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
+# 注意：以下插件 crate 名必须与 crates.io 完全一致
 tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-single-instance = "2"
+
+# 跨平台打开 URL（替代 open crate）
+webbrowser = "1"
 
 # 序列化
 serde = { version = "1", features = ["derive"] }
@@ -44,9 +48,6 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # HTTP 客户端（检查更新用）
 reqwest = { version = "0.12", features = ["json"] }
-
-# 跨平台打开 URL / 文件
-open = "5"
 
 # base64 编码
 base64 = "0.22"

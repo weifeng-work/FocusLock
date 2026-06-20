@@ -90,7 +90,7 @@ pub fn run() {
 
     tracing::info!("FocusLock 启动中…");
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             tracing::info!("检测到重复启动，已忽略。");
             if let Some(win) = app.get_webview_window("main") {
@@ -100,41 +100,58 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build());
+
+    // autostart 插件：仅 macOS 需要 MacosLauncher，Windows 不需要
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.plugin(tauri_plugin_autostart::init(
+            Some(tauri_plugin_autostart::MacosLauncher::LaunchAgent),
             None,
-        ))
+        ));
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        // Windows: 不加载 autostart 插件（用户可手动配置开机启动）
+        // 如需 Windows 开机启动，可通过注册表实现，不依赖此插件
+    }
+
+    builder
         .setup(|app| {
+            tracing::info!("进入 setup 闭包");
+
             // 1. 加载配置 + 初始化状态
+            tracing::info!("开始加载配置...");
             let (config, fallback) = Config::load();
             if fallback {
                 tracing::warn!("配置非法已回退默认，建议用户检查 config.json");
             }
+            tracing::info!("配置加载完成，方案数量: {}", config.schemes.len());
             let skip_accelerator = config.skip_shortcut.clone();
             // 提前读取遮罩模式（从当前方案获取，config 会被 move 给 spawn_engine）
             let fullscreen = config.schemes.first()
                 .map(|s| matches!(s.rest_reminder_mode, RestReminderMode::Fullscreen))
                 .unwrap_or(true);
+            tracing::info!("遮罩模式: {}", fullscreen);
             let (state, started_at) = bootstrap_state(&config);
+            tracing::info!("状态初始化完成: {:?}", state.status);
 
             // 2. 启动计时引擎
-            //    spawn_engine 返回 tick_loop future，由我们用 tauri::async_runtime::spawn 启动
-            //    （setup 闭包不在 Tokio runtime context，不能直接 tokio::spawn）
+            tracing::info!("启动计时引擎...");
             let (handle, mut event_rx, tick_future) = spawn_engine(config, state, started_at);
             tauri::async_runtime::spawn(tick_future);
+            tracing::info!("计时引擎已启动");
 
             // 2.1 注册全局快捷键（跳过休息）
+            tracing::info!("注册全局快捷键: {}", skip_accelerator);
             shortcut::register(app.handle(), &skip_accelerator, handle.clone());
 
             // 3. 引擎事件桥接到 Tauri event（供前端订阅）
-            //    前端 listen("engine-event") 即可收到状态变更
-            //    同时按事件类型分发系统通知（阶段 4）+ 遮罩管理（阶段 5）
             let app_handle = app.handle().clone();
-            // 遮罩管理器：fullscreen/popup 模式
             let overlay_mgr = Arc::new(overlay::OverlayManager::new(fullscreen));
             let overlay_mgr_for_task = overlay_mgr.clone();
             tauri::async_runtime::spawn(async move {
+                tracing::info!("引擎事件循环启动");
                 while let Some(ev) = event_rx.recv().await {
                     tracing::info!("引擎事件: {:?}", ev);
                     let _ = app_handle.emit("engine-event", &ev);
@@ -160,33 +177,17 @@ pub fn run() {
                         _ => {}
                     }
                 }
-            });
-            // 每秒倒计时推送给遮罩前端
-            let app_handle2 = app.handle().clone();
-            let overlay_mgr_tick = overlay_mgr.clone();
-            tauri::async_runtime::spawn(async move {
-                let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
-                interval.tick().await;
-                loop {
-                    interval.tick().await;
-                    let engine = match app_handle2.try_state::<engine::EngineHandle>() {
-                        Some(e) => e.inner().clone(),
-                        None => continue,
-                    };
-                    let (status, _, remaining) = engine.get_status().await;
-                    if status == Status::Resting {
-                        overlay_mgr_tick.tick(&app_handle2, remaining).await;
-                    }
-                }
+                tracing::info!("引擎事件循环结束");
             });
 
             // 4. 托盘：创建 + 启动 tooltip/图标刷新 task
+            tracing::info!("创建托盘...");
             tray::create_tray(app.handle())?;
+            tracing::info!("托盘创建完成");
             tray::spawn_tray_updater(app.handle().clone(), handle.clone());
+            tracing::info!("托盘更新器已启动");
 
             // 4.1 拦截主窗口（配置面板）关闭请求：改为隐藏，不退出应用。
-            //     托盘应用常驻后台，关闭配置窗口不应结束进程。
-            //     用户通过托盘菜单「退出」才会真正退出（app.exit(0)）。
             if let Some(main_win) = app.get_webview_window("main") {
                 let win_clone = main_win.clone();
                 main_win.on_window_event(move |event| {

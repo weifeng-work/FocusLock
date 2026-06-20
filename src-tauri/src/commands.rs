@@ -191,7 +191,6 @@ pub struct SoundFileInfo {
 pub async fn copy_custom_sound(source_path: String) -> Result<SoundFileInfo, String> {
     use std::path::Path;
     use tokio::fs;
-    use tokio::io::AsyncWriteExt;
 
     let source = Path::new(&source_path);
     if !source.exists() {
@@ -241,7 +240,6 @@ pub async fn copy_custom_sound(source_path: String) -> Result<SoundFileInfo, Str
 /// 获取已保存的自定义音效列表
 #[tauri::command]
 pub async fn get_sound_files() -> Result<Vec<SoundFileInfo>, String> {
-    use std::path::Path;
     use tokio::fs;
 
     let sounds_dir = crate::config::Config::data_dir().join("sounds");
@@ -293,7 +291,6 @@ pub async fn get_sound_files() -> Result<Vec<SoundFileInfo>, String> {
 /// 删除自定义音效文件
 #[tauri::command]
 pub async fn delete_sound_file(file_name: String) -> Result<bool, String> {
-    use std::path::Path;
     use tokio::fs;
 
     let sounds_dir = crate::config::Config::data_dir().join("sounds");
@@ -336,13 +333,13 @@ pub async fn read_sound_file(file_name: String) -> Result<String, String> {
         .map_err(|e| format!("读取文件失败: {}", e))?;
 
     // 转换为 base64
-    let base64 = base64::encode(&data);
+    let base64 = base64::engine::general_purpose::STANDARD.encode(&data);
     Ok(base64)
 }
 
 /// 用系统默认浏览器打开外部 URL
 #[tauri::command]
 pub fn open_external_url(url: String) -> Result<(), String> {
-    open::that(&url)
+    webbrowser::open(&url)
         .map_err(|e| format!("无法打开链接: {}", e))
 }
