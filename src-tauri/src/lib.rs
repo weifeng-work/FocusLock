@@ -221,6 +221,7 @@ pub fn run() {
             commands::get_sound_files,
             commands::delete_sound_file,
             commands::get_app_data_dir,
+            commands::open_external_url,
         ])
         .run(tauri::generate_context!())
         .expect("FocusLock 启动失败");

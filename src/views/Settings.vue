@@ -3,7 +3,8 @@
 // Tab 1: 方案管理 - 多方案 CRUD、阶段编辑、提示音、休息提醒模式
 // Tab 2: 作息表 - 多 Routine CRUD、时间段（TimePeriod）CRUD、end_action
 // Tab 3: 周配置 - 每天分配一个 routine
-// Tab 4: 系统设置 - 阈值、通知时间、快捷键、自启、检查更新
+// Tab 4: 系统设置 - 阈值、通知时间、快捷键、自启
+// Tab 5: 关于 - 版本信息、检查更新、GitHub 链接、微信二维码
 
 import { ref, computed, onMounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
@@ -16,7 +17,7 @@ import type {
 const { currentLocale, setLocale, t } = useI18n();
 
 const config = ref<Config | null>(null);
-const activeTab = ref<"scheme" | "routine" | "weekly" | "system">("scheme");
+const activeTab = ref<"scheme" | "routine" | "weekly" | "system" | "about">("scheme");
 const saving = ref(false);
 const message = ref<{ type: "ok" | "warn" | "err"; text: string } | null>(null);
 const isMac = navigator.platform.toUpperCase().includes("MAC");
@@ -31,6 +32,7 @@ const uploading = ref(false);
 // 检查更新
 const checkingUpdate = ref(false);
 const updateResult = ref<{ type: "ok" | "warn" | "err" | "info"; text: string } | null>(null);
+const currentVersion = ref("0.1.3");
 
 // ============== 加载 ==============
 async function load() {
@@ -369,21 +371,52 @@ async function onResetTimer() {
   message.value = { type: "ok", text: "已重置计时，新配置立即生效" };
 }
 
+// ============== 检查更新（前端 fetch，走系统代理） ==============
 async function onCheckUpdate() {
   checkingUpdate.value = true;
   updateResult.value = null;
   try {
-    const result = await invoke<{ current: string; latest: string; url: string; has_update: boolean }>("check_update");
-    if (result.has_update) {
-      updateResult.value = { type: "warn", text: `发现新版本 ${result.latest}（当前 v${result.current}）` };
+    const resp = await fetch("https://api.github.com/repos/weifeng-work/FocusLock/releases/latest", {
+      headers: {
+        "User-Agent": "FocusLock",
+        "Accept": "application/vnd.github.v3+json",
+      },
+    });
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status}`);
+    }
+    const data = await resp.json();
+    // GitHub API 返回: { tag_name: "v0.1.3", html_url: "...", ... }
+    const latest = (data.tag_name || "").replace(/^v/, "");
+    const cleanCurrent = currentVersion.value.replace(/^v/, "");
+    // 简单版本比较（只比较 major.minor.patch）
+    const parseVer = (v: string) => v.split(".").map(Number);
+    const cur = parseVer(cleanCurrent);
+    const lat = parseVer(latest);
+    let hasUpdate = false;
+    for (let i = 0; i < 3; i++) {
+      if ((lat[i] || 0) > (cur[i] || 0)) { hasUpdate = true; break; }
+      if ((lat[i] || 0) < (cur[i] || 0)) break;
+    }
+    if (hasUpdate) {
+      updateResult.value = { type: "warn", text: `发现新版本 v${latest}（当前 v${cleanCurrent}）` };
     } else {
-      updateResult.value = { type: "ok", text: `已是最新版本 v${result.current}` };
+      updateResult.value = { type: "ok", text: `已是最新版本 v${cleanCurrent}` };
     }
   } catch (e) {
     updateResult.value = { type: "err", text: `检查失败：${String(e)}` };
   } finally {
     checkingUpdate.value = false;
   }
+}
+
+// ============== 打开外部链接 ==============
+function openExternal(url: string) {
+  // 调用后端命令，用系统默认浏览器打开 URL
+  invoke("open_external_url", { url }).catch(() => {
+    // fallback: 在新窗口打开（Tauri 内会尝试用系统浏览器）
+    window.open(url, "_blank");
+  });
 }
 
 // ============== 工具 ==============
@@ -444,6 +477,9 @@ function clampMin(v: number, min: number, max: number): number {
       </button>
       <button :class="['tab', { active: activeTab === 'system' }]" @click="activeTab = 'system'">
         {{ t("settings.tabs.system") }}
+      </button>
+      <button :class="['tab', { active: activeTab === 'about' }]" @click="activeTab = 'about'">
+        {{ t("settings.about") }}
       </button>
     </div>
 
@@ -783,18 +819,45 @@ function clampMin(v: number, min: number, max: number): number {
         </label>
         <p class="hint">默认关闭。开启后可覆盖任务管理器等管理员程序。</p>
       </section>
+    </div>
 
-      <section>
-        <h2>{{ t("settings.about") }}</h2>
-        <div class="update-bar">
+    <!-- =================== Tab 5: 关于 =================== -->
+    <div v-show="activeTab === 'about'">
+      <section class="about-section">
+        <div class="about-logo">
+          <div class="app-icon">⏱</div>
+          <h2>FocusLock</h2>
+          <p class="version-text">v{{ currentVersion }}</p>
+        </div>
+
+        <div class="update-area">
           <button class="btn-secondary" :disabled="checkingUpdate" @click="onCheckUpdate">
             {{ checkingUpdate ? "检查中…" : t("settings.checkUpdate") }}
           </button>
-          <a href="https://github.com/weifeng-work/FocusLock/releases" target="_blank" class="update-link">
-            {{ t("settings.githubRelease") }} →
-          </a>
+          <span v-if="updateResult" :class="['msg', 'inline', updateResult.type]">{{ updateResult.text }}</span>
         </div>
-        <div v-if="updateResult" :class="['msg', 'inline', updateResult.type]">{{ updateResult.text }}</div>
+
+        <div class="about-links">
+          <button class="link-btn" @click="openExternal('https://github.com/weifeng-work/FocusLock/releases')">
+            {{ t("settings.githubRelease") }} →
+          </button>
+          <button class="link-btn" @click="openExternal('https://github.com/weifeng-work/FocusLock')">
+            GitHub 主页 →
+          </button>
+        </div>
+
+        <div class="about-desc">
+          <p>FocusLock 是一款轻量级专注节奏助手。</p>
+          <p>自定义工作/休息阶段循环，到点全屏遮罩强休。</p>
+        </div>
+      </section>
+
+      <!-- 微信客服群 -->
+      <section class="footer-section">
+        <div class="wechat-section">
+          <p class="wechat-hint">扫码加入 FocusLock 微信客服群，获取帮助 / 提反馈 / 参与讨论</p>
+          <img src="/wechat-qrcode.png" alt="FocusLock 微信客服群" class="wechat-qr" />
+        </div>
       </section>
     </div>
 
@@ -807,14 +870,6 @@ function clampMin(v: number, min: number, max: number): number {
     </section>
 
     <div v-if="message" :class="['msg', message.type]">{{ message.text }}</div>
-
-    <!-- 微信客服群 -->
-    <section class="footer-section">
-      <div class="wechat-section">
-        <p class="wechat-hint">扫码加入 FocusLock 微信客服群，获取帮助 / 提反馈 / 参与讨论</p>
-        <img src="/wechat-qrcode.png" alt="FocusLock 微信客服群" class="wechat-qr" />
-      </div>
-    </section>
   </div>
 </template>
 
@@ -1281,20 +1336,58 @@ section {
 .msg.info { background: #e8ecf4; color: #334e7a; }
 .msg.inline { display: inline-block; margin-top: 8px; }
 
-.update-bar {
+/* 关于页面 */
+.about-section {
+  text-align: center;
+  padding: 24px 0;
+}
+.about-logo {
+  margin-bottom: 20px;
+}
+.app-icon {
+  font-size: 48px;
+  margin-bottom: 8px;
+}
+.about-logo h2 {
+  font-size: 24px;
+  margin: 0 0 4px;
+}
+.version-text {
+  font-size: 14px;
+  color: #888;
+  margin: 0;
+}
+.update-area {
+  margin: 16px 0;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 12px;
 }
-.update-link {
-  font-size: 12px;
+.about-links {
+  margin: 16px 0;
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+.link-btn {
+  background: none;
+  border: none;
   color: #185fa5;
-  text-decoration: none;
-}
-.update-link:hover {
+  cursor: pointer;
+  font-size: 13px;
   text-decoration: underline;
+  padding: 4px 8px;
 }
-
+.link-btn:hover {
+  color: #0e3d6e;
+}
+.about-desc {
+  margin: 16px 0;
+  font-size: 13px;
+  color: #5f5e5a;
+  line-height: 1.6;
+}
 .footer-section {
   border-bottom: none;
   text-align: center;
@@ -1316,5 +1409,16 @@ section {
   border: 1px solid #d3d1c7;
   border-radius: 8px;
   object-fit: contain;
+}
+
+/* 响应式 */
+@media (max-width: 480px) {
+  .tab-bar {
+    flex-wrap: wrap;
+  }
+  .tab {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
 }
 </style>

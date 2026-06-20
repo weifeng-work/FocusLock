@@ -339,3 +339,10 @@ pub async fn read_sound_file(file_name: String) -> Result<String, String> {
     let base64 = base64::encode(&data);
     Ok(base64)
 }
+
+/// 用系统默认浏览器打开外部 URL
+#[tauri::command]
+pub fn open_external_url(url: String) -> Result<(), String> {
+    open::that(&url)
+        .map_err(|e| format!("无法打开链接: {}", e))
+}
