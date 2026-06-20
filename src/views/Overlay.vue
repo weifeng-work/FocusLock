@@ -1,21 +1,26 @@
 <script setup lang="ts">
-// 休息遮罩页（阶段 5）
+// 休息遮罩页
 //
 // URL 查询参数（后端构造）：
-//   primary=1   主显示器：大字倒计时 + 快捷键提示
-//   primary=0   副显示器：纯黑半透明
-//   popup=1     popup 模式：紧凑倒计时
+//   primary=1   主显示器：大字倒计时 + 文案 + 跳过按钮
+//   primary=0   副显示器：纯黑半透明（不显示按钮，避免误触）
+//   popup=1     popup 模式：紧凑卡片
 //   remaining=N 初始剩余秒数
+//   opacity=0-100  遮罩不透明度（默认 95）
+//   msg=...     休息文案（URL-encoded）
 //
 // 倒计时通过 listen("overlay-tick") 接收后端每秒推送。
-// 拦截鼠标点击（pointer-events:none + 容器吞 click）实现软强制。
-// 遮罩样式和提示词从配置读取（overlay_style / rest_message）
+//
+// 鼠标策略：恢复默认指针（不再 cursor: none），让用户能用鼠标操作。
+// 解锁按钮：hover 后显示 2 秒倒计时，停留满 2 秒才真正解锁（防误触）。
+//           同时显示键盘快捷键提示。
+//
+// 透明度：读取 opacity 参数，用 CSS 变量驱动。
 
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRoute } from "vue-router";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import type { Config, OverlayStyle } from "../types";
 
 const route = useRoute();
 
@@ -25,15 +30,27 @@ const isSecondary = computed(() => !isPopup.value && !isPrimary.value);
 
 const remaining = ref<number>(Number(route.query.remaining ?? 0));
 
+// URL 参数：opacity (0-100) + msg（URL-encoded）
+const overlayOpacity = computed(() => {
+  const v = Number(route.query.opacity ?? 95);
+  return Math.max(0, Math.min(100, isNaN(v) ? 95 : v));
+});
+
+const messageFromUrl = computed(() => {
+  const raw = String(route.query.msg ?? "");
+  if (!raw) return "";
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+});
+
 const display = computed(() => {
   const m = Math.floor(remaining.value / 60);
   const s = remaining.value % 60;
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 });
-
-// 从配置加载的：遮罩样式 + 自定义提示词
-const overlayStyle = ref<OverlayStyle>("semi_transparent");
-const restMessage = ref("现在休息");
 
 // 平台相关快捷键提示文案
 const isMac = navigator.platform.toUpperCase().includes("MAC");
@@ -41,25 +58,43 @@ const shortcutHint = isMac
   ? "按 Cmd+Shift+F2 跳过休息"
   : "按 Ctrl+Shift+F2 跳过休息";
 
+// 鼠标悬停解锁：hover 后 2 秒倒计时
+const hovering = ref(false);
+const hoverCountdown = ref(0);
+let hoverTimer: number | null = null;
+
+function startHoverUnlock() {
+  if (hovering.value) return;
+  hovering.value = true;
+  hoverCountdown.value = 2;
+  hoverTimer = window.setInterval(() => {
+    hoverCountdown.value -= 1;
+    if (hoverCountdown.value <= 0) {
+      if (hoverTimer) {
+        clearInterval(hoverTimer);
+        hoverTimer = null;
+      }
+      invoke("skip_rest").catch(() => {});
+    }
+  }, 1000);
+}
+
+function cancelHoverUnlock() {
+  if (hoverTimer) {
+    clearInterval(hoverTimer);
+    hoverTimer = null;
+  }
+  hovering.value = false;
+  hoverCountdown.value = 0;
+}
+
+function onSkipClick() {
+  invoke("skip_rest").catch(() => {});
+}
+
 let unlisten: UnlistenFn | null = null;
 
 onMounted(async () => {
-  // 加载配置获取遮罩样式和提示词
-  try {
-    const cfg = await invoke<Config>("get_config");
-    // 使用第一个方案的设置（临时方案）
-    const currentScheme = cfg.schemes[0];
-    if (currentScheme) {
-      overlayStyle.value = currentScheme.rest_reminder_mode === "fullscreen"
-        ? "semi_transparent"
-        : "semi_transparent"; // popup 模式也使用半透明
-      // 注意：rest_message 现在在 TimePeriod.end_action 中，这里暂时使用默认值
-      restMessage.value = "现在休息";
-    }
-  } catch {
-    // 配置读取失败时使用默认值
-  }
-
   // 订阅后端每秒倒计时推送
   unlisten = await listen<number>("overlay-tick", (e) => {
     remaining.value = e.payload;
@@ -68,75 +103,94 @@ onMounted(async () => {
 
 onUnmounted(() => {
   unlisten?.();
+  if (hoverTimer) clearInterval(hoverTimer);
 });
 
-// 遮罩样式映射到 CSS 类名
-const overlayClass = computed(() => {
-  if (isSecondary.value) return `overlay-secondary style-${overlayStyle.value}`;
-  if (isPrimary.value) return `overlay-primary style-${overlayStyle.value}`;
-  return `overlay-popup`;
-});
-
-// 软强制：拦截点击（除了「跳过休息」按钮）
-function onSkip() {
-  invoke("skip_rest");
-}
+// 遮罩样式：使用 CSS 变量 --bg-alpha 控制透明度
+const overlayStyle = computed(() => ({
+  "--bg-alpha": (overlayOpacity.value / 100).toFixed(2),
+}));
 </script>
 
 <template>
-  <!-- 副显示器：根据样式渲染 -->
-  <div v-if="isSecondary" :class="overlayClass" @click.prevent.stop>
-    <!-- 故意空：拦截点击 -->
-  </div>
-
-  <!-- 主显示器：大字倒计时 + 自定义提示词 -->
+  <!-- 副显示器：根据透明度渲染背景 + "休息中" 小提示，避免全空让用户以为死机 -->
   <div
-    v-else-if="isPrimary"
-    :class="overlayClass"
+    v-if="isSecondary"
+    class="overlay-secondary"
+    :style="overlayStyle"
     @click.prevent.stop
   >
-    <div class="hint-top">{{ restMessage }}</div>
-    <div class="countdown">{{ display }}</div>
-    <div class="hint-bottom">{{ shortcutHint }}</div>
-    <button v-if="isPopup" class="skip-btn" @click.stop="onSkip">跳过休息</button>
+    <div class="secondary-hint">休息中</div>
   </div>
 
-  <!-- popup 模式：紧凑 -->
-  <div v-else class="overlay-popup" @click.prevent.stop>
-    <div class="popup-title">FocusLock {{ restMessage }}</div>
+  <!-- 主显示器：大字倒计时 + 文案 + 解锁按钮 -->
+  <div
+    v-else-if="isPrimary"
+    class="overlay-primary"
+    :style="overlayStyle"
+    @click.prevent.stop
+  >
+    <div class="hint-top">{{ messageFromUrl || "休息一下" }}</div>
+    <div class="countdown">{{ display }}</div>
+
+    <!-- 跳过按钮：hover 后 2 秒倒计时，停留满才解锁 -->
+    <div
+      class="unlock-area"
+      @mouseenter="startHoverUnlock"
+      @mouseleave="cancelHoverUnlock"
+      @click.stop
+    >
+      <button class="unlock-btn" :class="{ 'is-hovering': hovering }">
+        <span v-if="!hovering">将鼠标移到这里跳过休息</span>
+        <span v-else>再停留 {{ hoverCountdown }} 秒解锁…</span>
+      </button>
+      <div class="shortcut-hint">{{ shortcutHint }}</div>
+    </div>
+  </div>
+
+  <!-- popup 模式：紧凑卡片，保留原样 -->
+  <div
+    v-else
+    class="overlay-popup"
+    :style="overlayStyle"
+    @click.prevent.stop
+  >
+    <div class="popup-title">FocusLock</div>
+    <div class="popup-message">{{ messageFromUrl || "休息一下" }}</div>
     <div class="popup-countdown">{{ display }}</div>
-    <button class="skip-btn" @click.stop="onSkip">跳过休息</button>
+    <button class="skip-btn" @click.stop="onSkipClick">跳过休息</button>
   </div>
 </template>
 
 <style scoped>
-/* ========== 遮罩样式变体 ========== */
-
-/* --- 半透明（默认，当前效果）--- */
-.style-semi_transparent.overlay-secondary,
-.style-semi_transparent.overlay-primary {
-  background: rgba(0, 0, 0, 0.9);
+/* ========== 通用：CSS 变量驱动的遮罩背景 ========== */
+.overlay-primary,
+.overlay-secondary {
+  background: rgba(0, 0, 0, var(--bg-alpha, 0.95));
+  /* 恢复默认鼠标指针（不再 cursor: none） */
 }
 
-/* --- 纯黑不透明 --- */
-.style-full_black.overlay-secondary,
-.style-full_black.overlay-primary {
-  background: #000000;
-}
-
-/* --- 暗色调（深蓝灰）--- */
-.style-dark.overlay-secondary,
-.style-dark.overlay-primary {
-  background: rgba(18, 18, 24, 0.95);
+.overlay-popup {
+  background: #1f1f1f;
 }
 
 /* ========== 副显示器基础样式 ========== */
 .overlay-secondary {
   position: fixed;
   inset: 0;
-  cursor: none;
   user-select: none;
   transition: background 0.3s ease;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 8vh;
+}
+
+.secondary-hint {
+  color: rgba(255, 255, 255, 0.25);
+  font-size: 14px;
+  letter-spacing: 4px;
+  font-weight: 300;
 }
 
 /* ========== 主显示器基础样式 ========== */
@@ -149,7 +203,6 @@ function onSkip() {
   justify-content: center;
   color: #ffffff;
   user-select: none;
-  cursor: none;
   transition: background 0.3s ease;
 }
 
@@ -159,6 +212,8 @@ function onSkip() {
   letter-spacing: 8px;
   margin-bottom: 32px;
   opacity: 0.7;
+  text-align: center;
+  padding: 0 32px;
 }
 
 .countdown {
@@ -169,16 +224,40 @@ function onSkip() {
   letter-spacing: -0.02em;
 }
 
-.hint-bottom {
+/* ========== 解锁按钮（hover 2 秒） ========== */
+.unlock-area {
   position: fixed;
-  bottom: 5vh;
-  font-size: 16px;
-  opacity: 0.5;
-  cursor: pointer; /* 允许点击提示区域 */
+  bottom: 8vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
 }
 
-.hint-bottom:hover {
-  opacity: 0.9;
+.unlock-btn {
+  padding: 14px 36px;
+  background: transparent;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 999px;
+  font-size: 14px;
+  letter-spacing: 2px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+  min-width: 240px;
+}
+
+.unlock-btn:hover,
+.unlock-btn.is-hovering {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.shortcut-hint {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+  letter-spacing: 1px;
 }
 
 /* ========== popup 模式：右下角紧凑卡片 ========== */
@@ -189,17 +268,25 @@ function onSkip() {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: #1f1f1f;
   color: #ffffff;
   border-radius: 12px;
   user-select: none;
 }
 
 .popup-title {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 500;
+  margin-bottom: 4px;
+  opacity: 0.6;
+  letter-spacing: 2px;
+}
+
+.popup-message {
+  font-size: 13px;
+  opacity: 0.5;
   margin-bottom: 16px;
-  opacity: 0.8;
+  text-align: center;
+  padding: 0 24px;
 }
 
 .popup-countdown {
@@ -218,6 +305,7 @@ function onSkip() {
   font-size: 14px;
   cursor: pointer;
   transition: all 0.15s;
+  font-family: inherit;
 }
 
 .skip-btn:hover {

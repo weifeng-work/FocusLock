@@ -9,6 +9,7 @@ export type StageType = "work" | "rest";
 export type RestReminderMode = "fullscreen" | "popup";
 export type OverlayStyle = "semi_transparent" | "full_black" | "dark";
 export type SoundType = "none" | "builtin" | { custom: string };
+export type RestMessageMode = "random" | "fixed";
 
 export interface Stage {
   type: StageType;
@@ -72,6 +73,12 @@ export interface Config {
   skip_shortcut: string;
   run_as_admin_autostart: boolean;
   language: string;
+  /** 遮罩不透明度 0-100，默认 95 */
+  overlay_opacity: number;
+  /** 用户自定义休息提示文案；空时使用内置 10 条随机 */
+  rest_messages: string[];
+  /** 随机 / 固定轮询 */
+  rest_message_mode: RestMessageMode;
 }
 
 // 音效文件信息

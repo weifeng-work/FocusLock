@@ -54,6 +54,20 @@ pub enum OverlayStyle {
     Dark,
 }
 
+/// 休息文案展示模式
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RestMessageMode {
+    /// 随机选一条（用户多文案时随机；空时随机内置）
+    Random,
+    /// 固定按顺序轮询
+    Fixed,
+}
+
+impl Default for RestMessageMode {
+    fn default() -> Self { RestMessageMode::Random }
+}
+
 /// 音效类型
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -96,6 +110,51 @@ pub enum PeriodEndAction {
         /// 提示音
         sound: SoundType,
     },
+}
+
+// ==================== 内置护眼/休息文案 ====================
+
+/// 内置的休息/护眼提示文案（用户未自定义时随机使用）
+pub const DEFAULT_REST_MESSAGES: &[&str] = &[
+    "休息一下，保护眼睛",
+    "看看远处，让眼睛放松一下",
+    "站起来活动活动肩颈",
+    "深呼吸，喝口水",
+    "闭眼休息 20 秒",
+    "眺望窗外 6 米外",
+    "眨眨眼，缓解眼干",
+    "调整坐姿，伸个懒腰",
+    "暂时离开屏幕，让眼睛呼吸",
+    "短暂休息，效率更高",
+];
+
+/// 根据用户配置（custom messages + mode）选一条文案。
+///
+/// - 用户 rest_messages 非空：按 mode 在用户文案中选
+/// - 用户 rest_messages 为空：使用 DEFAULT_REST_MESSAGES，按 mode 选
+/// - mode = Fixed 时用 (unix_ts / 60) % len 作轮询（同一分钟内不重复）
+pub fn pick_rest_message(user_messages: &[String], mode: RestMessageMode, now_ts: i64) -> String {
+    let pool: Vec<&str> = if user_messages.is_empty() {
+        DEFAULT_REST_MESSAGES.iter().copied().collect()
+    } else {
+        // 过滤掉空字符串
+        user_messages.iter().map(|s| s.as_str()).filter(|s| !s.is_empty()).collect()
+    };
+    if pool.is_empty() {
+        return "休息一下".to_string();
+    }
+    let idx = match mode {
+        RestMessageMode::Random => {
+            // 用 now_ts 的低 31 位做种子
+            (now_ts as u64 as usize) % pool.len()
+        }
+        RestMessageMode::Fixed => {
+            // 每 60 秒切换一条，循环
+            let bucket = (now_ts.max(0) as u64) / 60;
+            (bucket as usize) % pool.len()
+        }
+    };
+    pool[idx].to_string()
 }
 
 // ==================== 方案 / 时间段 / 作息表 ====================
@@ -216,6 +275,15 @@ pub struct Config {
     /// 界面语言（"zh" / "en"）
     #[serde(default = "default_language")]
     pub language: String,
+    /// 遮罩背景不透明度（0-100，默认 95）。100 = 全黑；0 = 完全透明
+    #[serde(default = "default_overlay_opacity")]
+    pub overlay_opacity: u8,
+    /// 用户自定义休息提示文案（空时使用内置默认）
+    #[serde(default)]
+    pub rest_messages: Vec<String>,
+    /// 休息文案展示模式（random / fixed）
+    #[serde(default)]
+    pub rest_message_mode: RestMessageMode,
 }
 
 // ==================== 默认值函数 ====================
@@ -228,6 +296,7 @@ fn default_reset_threshold() -> u32 { 30 }
 fn default_notify_before() -> u32 { 1 }
 fn default_skip_shortcut() -> String { "CmdOrCtrl+Shift+F2".to_string() }
 fn default_language() -> String { "zh".to_string() }
+fn default_overlay_opacity() -> u8 { 95 }
 
 fn default_sound_none() -> SoundType { SoundType::None }
 fn default_sound_builtin() -> SoundType { SoundType::Builtin }
@@ -349,6 +418,9 @@ impl Default for Config {
             skip_shortcut:                default_skip_shortcut(),
             run_as_admin_autostart:       false,
             language:                      default_language(),
+            overlay_opacity:               default_overlay_opacity(),
+            rest_messages:                 Vec::new(),
+            rest_message_mode:             RestMessageMode::Random,
         }
     }
 }
@@ -543,6 +615,9 @@ impl OldConfig {
             skip_shortcut:                self.skip_shortcut,
             run_as_admin_autostart:       self.run_as_admin_autostart,
             language:                      self.language,
+            overlay_opacity:               default_overlay_opacity(),
+            rest_messages:                 Vec::new(),
+            rest_message_mode:             RestMessageMode::Random,
         }
     }
 }

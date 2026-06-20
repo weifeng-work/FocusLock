@@ -40,6 +40,10 @@ pub struct OverlayManager {
     windows: Mutex<HashMap<String, Option<usize>>>,
     /// 是否 fullscreen 模式（否则 popup）
     fullscreen: bool,
+    /// 遮罩不透明度 0-100（传给前端）
+    overlay_opacity: Mutex<u8>,
+    /// 遮罩文案（传给前端）
+    overlay_message: Mutex<String>,
 }
 
 impl OverlayManager {
@@ -47,7 +51,15 @@ impl OverlayManager {
         Self {
             windows: Mutex::new(HashMap::new()),
             fullscreen,
+            overlay_opacity: Mutex::new(95),
+            overlay_message: Mutex::new("休息一下".to_string()),
         }
+    }
+
+    /// 设置当前遮罩参数（不透明度 0-100、文案）。由 lib.rs 在 RestStarted 时调用。
+    pub async fn set_params(&self, opacity: u8, message: String) {
+        *self.overlay_opacity.lock().await = opacity.min(100);
+        *self.overlay_message.lock().await = message;
     }
 
     /// 展示休息遮罩。在引擎进入 Resting 时调用。
@@ -80,6 +92,8 @@ impl OverlayManager {
         let monitors = create_capabilities()
             .monitor
             .list_monitors();
+        let opacity = *self.overlay_opacity.lock().await;
+        let message = self.overlay_message.lock().await.clone();
         let mut wins = self.windows.lock().await;
         for (idx, mon) in monitors.iter().enumerate() {
             let label = format!("{}{}", OVERLAY_PREFIX, idx);
@@ -87,9 +101,11 @@ impl OverlayManager {
             if wins.contains_key(&label) {
                 continue;
             }
+            // 消息 URL encode（防止中文 / 特殊字符）
+            let msg_enc = url_encode(&message);
             let url = format!(
-                "/#/overlay?primary={}&remaining={}",
-                mon.is_primary, remaining
+                "/#/overlay?primary={}&remaining={}&opacity={}&msg={}",
+                mon.is_primary, remaining, opacity, msg_enc
             );
             match self.create_overlay_window(app, &label, mon, &url, true).await {
                 Ok(()) => {
@@ -114,6 +130,8 @@ impl OverlayManager {
         if wins.contains_key(POPUP_LABEL) {
             return;
         }
+        let opacity = *self.overlay_opacity.lock().await;
+        let message = self.overlay_message.lock().await.clone();
         // popup 用一个固定大小窗口，居中偏右下
         let rect = MonitorRect {
             x: -360,
@@ -122,7 +140,8 @@ impl OverlayManager {
             height: 220,
             is_primary: true,
         };
-        let url = format!("/#/overlay?popup=1&remaining={}", remaining);
+        let msg_enc = url_encode(&message);
+        let url = format!("/#/overlay?popup=1&remaining={}&opacity={}&msg={}", remaining, opacity, msg_enc);
         match self.create_overlay_window(app, POPUP_LABEL, &rect, &url, false).await {
             Ok(()) => {
                 wins.insert(POPUP_LABEL.to_string(), None);
@@ -227,4 +246,20 @@ pub fn spawn_hotplug_watcher(
             }
         }
     })
+}
+
+/// URL-encode 用于 query string 里的文案（覆盖 ASCII 非保留字符 + 非 ASCII）
+fn url_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() * 3);
+    for &b in s.as_bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
+            _ => {
+                out.push_str(&format!("%{:02X}", b));
+            }
+        }
+    }
+    out
 }

@@ -177,7 +177,8 @@ pub fn run() {
                     notify::on_engine_event(&app_handle, &ev);
                     // 遮罩生命周期管理
                     match &ev {
-                        EngineEvent::RestStarted { remaining, .. } => {
+                        EngineEvent::RestStarted { remaining, message, overlay_opacity, .. } => {
+                            overlay_mgr_for_task.set_params(*overlay_opacity, message.clone()).await;
                             overlay_mgr_for_task.show(&app_handle, *remaining).await;
                         }
                         EngineEvent::RestEnded | EngineEvent::RestSkipped => {

@@ -59,6 +59,18 @@ export const en = {
     skipShortcut: "Skip Rest Shortcut",
     runAsAdmin: "Run as Admin on Startup (Windows only)",
 
+    overlaySection: "Overlay Appearance",
+    overlayOpacity: "Overlay Opacity",
+    overlayOpacityHint: "100% = fully black; 0% = fully transparent. Adjust the slider to test.",
+
+    restMessageSection: "Rest Message",
+    restMessageMode: "Display Mode",
+    restMessageModeRandom: "Random",
+    restMessageModeFixed: "Cycle in Order",
+    restMessages: "Custom Messages (one per line, leave empty to use built-ins)",
+    restMessagesPlaceholder: "Take a break, rest your eyes\nLook at the distance, relax your eyes\nStand up and stretch",
+    restMessagesHint: "Built-in messages cover eye care, stretching, breathing. Customize if needed.",
+
     actions: "Actions",
     save: "Save Config",
     resetTimer: "Reset Timer",

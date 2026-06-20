@@ -34,10 +34,12 @@ pub enum EngineEvent {
     WorkStarted { remaining: u64 },
     /// 工作即将结束，准备休息（剩余秒数，应 <= notify_before * 60）
     PrepareRest { remaining: u64 },
-    /// 进入休息阶段（剩余秒数，提醒模式）
+    /// 进入休息阶段（剩余秒数，提醒模式，遮罩文案，遮罩不透明度 0-100）
     RestStarted {
         remaining: u64,
         mode: RestReminderMode,
+        message: String,
+        overlay_opacity: u8,
     },
     /// 休息结束，进入下一阶段
     RestEnded,
@@ -407,9 +409,16 @@ async fn tick_loop(
                         let mode = g.current_scheme()
                             .map(|s| s.rest_reminder_mode)
                             .unwrap_or(crate::config::RestReminderMode::Fullscreen);
+                        let message = crate::config::pick_rest_message(
+                            &g.config.rest_messages,
+                            g.config.rest_message_mode,
+                            now,
+                        );
                         let _ = tx.send(EngineEvent::RestStarted {
                             remaining: g.state.remaining_seconds,
                             mode,
+                            message,
+                            overlay_opacity: g.config.overlay_opacity,
                         });
                     }
                     let _ = tx.send(EngineEvent::StatusChanged {
@@ -449,9 +458,16 @@ async fn tick_loop(
                         let mode = g.current_scheme()
                             .map(|s| s.rest_reminder_mode)
                             .unwrap_or(crate::config::RestReminderMode::Fullscreen);
+                        let message = crate::config::pick_rest_message(
+                            &g.config.rest_messages,
+                            g.config.rest_message_mode,
+                            now,
+                        );
                         let _ = tx.send(EngineEvent::RestStarted {
                             remaining: g.state.remaining_seconds,
                             mode,
+                            message,
+                            overlay_opacity: g.config.overlay_opacity,
                         });
                     }
                     let _ = tx.send(EngineEvent::StatusChanged {

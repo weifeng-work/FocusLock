@@ -60,7 +60,7 @@ pub fn on_engine_event<R: Runtime>(app: &AppHandle<R>, event: &EngineEvent) {
                 ),
             );
         }
-        EngineEvent::RestStarted { remaining, mode } => {
+        EngineEvent::RestStarted { remaining, mode, .. } => {
             let mode_text = match mode {
                 RestReminderMode::Fullscreen => "全屏遮罩",
                 RestReminderMode::Popup => "弹窗",

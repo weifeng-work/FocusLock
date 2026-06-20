@@ -59,6 +59,18 @@ export const zh = {
     skipShortcut: "跳过休息快捷键",
     runAsAdmin: "以管理员权限自启（仅 Windows）",
 
+    overlaySection: "遮罩外观",
+    overlayOpacity: "遮罩不透明度",
+    overlayOpacityHint: "100% = 完全黑屏；0% = 完全透明。可调滑块测试效果。",
+
+    restMessageSection: "休息提示文案",
+    restMessageMode: "文案展示模式",
+    restMessageModeRandom: "随机展示",
+    restMessageModeFixed: "顺序轮询",
+    restMessages: "自定义文案（每行一条，留空使用内置 10 条）",
+    restMessagesPlaceholder: "休息一下，保护眼睛\n看看远处，让眼睛放松一下\n站起来活动活动肩颈",
+    restMessagesHint: "内置文案覆盖护眼、活动、深呼吸等场景；如需个性化可填写自定义文案。",
+
     actions: "操作",
     save: "保存配置",
     resetTimer: "重置计时",

@@ -54,6 +54,20 @@ const currentScheme = computed<Scheme | undefined>(() => {
   return config.value?.schemes[currentSchemeIndex.value];
 });
 
+// ============== 休息文案：textarea 双向绑定 ==============
+// 数组 ↔ 多行文本（每行一条）
+const restMessagesText = computed({
+  get: () => (config.value?.rest_messages ?? []).join("\n"),
+  set: (v: string) => {
+    if (!config.value) return;
+    // 拆分：按行，过滤空行，trim
+    config.value.rest_messages = v
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+  },
+});
+
 function isBuiltInScheme(scheme: Scheme): boolean {
   // 内置方案 id: pomodoro / standard / deep_work
   return ["pomodoro", "standard", "deep_work"].includes(scheme.id);
@@ -818,6 +832,42 @@ function clampMin(v: number, min: number, max: number): number {
           以管理员权限自启（提升遮罩覆盖能力，每次开机弹 UAC）
         </label>
         <p class="hint">默认关闭。开启后可覆盖任务管理器等管理员程序。</p>
+      </section>
+
+      <section>
+        <h2>{{ t("settings.overlaySection") }}</h2>
+        <div class="field">
+          <label>{{ t("settings.overlayOpacity") }}</label>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            step="5"
+            v-model.number="config.overlay_opacity"
+          />
+          <span class="unit">{{ config.overlay_opacity ?? 95 }}%</span>
+        </div>
+        <p class="hint">{{ t("settings.overlayOpacityHint") }}</p>
+      </section>
+
+      <section>
+        <h2>{{ t("settings.restMessageSection") }}</h2>
+        <div class="field">
+          <label>{{ t("settings.restMessageMode") }}</label>
+          <select v-model="config.rest_message_mode">
+            <option value="random">{{ t("settings.restMessageModeRandom") }}</option>
+            <option value="fixed">{{ t("settings.restMessageModeFixed") }}</option>
+          </select>
+        </div>
+        <div class="field column">
+          <label>{{ t("settings.restMessages") }}</label>
+          <textarea
+            v-model="restMessagesText"
+            rows="6"
+            :placeholder="t('settings.restMessagesPlaceholder')"
+          />
+          <p class="hint">{{ t("settings.restMessagesHint") }}</p>
+        </div>
       </section>
     </div>
 
