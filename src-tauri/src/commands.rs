@@ -5,6 +5,7 @@
 
 use crate::engine::EngineHandle;
 use crate::state::Status;
+use base64::Engine;
 use chrono::Utc;
 use serde::Serialize;
 
