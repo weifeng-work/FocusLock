@@ -80,6 +80,25 @@ fn bootstrap_state(config: &Config) -> (AppState, i64) {
 
 /// 应用启动入口
 pub fn run() {
+    // 设置 panic hook，将 panic 信息写入日志文件
+    let crash_log_path = dirs::data_dir()
+        .map(|mut p| {
+            p.push("FocusLock");
+            p.push("focuslock-crash.log");
+            p
+        });
+    if let Some(ref p) = crash_log_path {
+        let _ = std::fs::create_dir_all(p.parent().unwrap());
+    }
+    let crash_log_path_clone = crash_log_path.clone();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        let msg = format!("PANIC at {}: {}", Utc::now().format("%Y-%m-%d %H:%M:%S%.3f"), panic_info);
+        eprintln!("{}", msg);
+        if let Some(ref p) = crash_log_path_clone {
+            let _ = std::fs::write(p, msg);
+        }
+    }));
+
     // 初始化日志
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
