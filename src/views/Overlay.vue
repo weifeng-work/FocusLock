@@ -9,7 +9,7 @@
 //   opacity=0-100  遮罩不透明度（默认 95）
 //   msg=...     休息文案（URL-encoded）
 //
-// 倒计时通过 listen("overlay-tick") 接收后端每秒推送。
+// 倒计时：前端通过 setInterval 本地驱动，同时监听后端 "overlay-tick" 作为备用同步。
 //
 // 鼠标策略：恢复默认指针（不再 cursor: none），让用户能用鼠标操作。
 // 解锁按钮：hover 后显示 2 秒倒计时，停留满 2 秒才真正解锁（防误触）。
@@ -93,9 +93,17 @@ function onSkipClick() {
 }
 
 let unlisten: UnlistenFn | null = null;
+let countdownTimer: number | null = null;
 
 onMounted(async () => {
-  // 订阅后端每秒倒计时推送
+  // 前端本地驱动倒计时：每秒递减 remaining
+  countdownTimer = window.setInterval(() => {
+    if (remaining.value > 0) {
+      remaining.value--;
+    }
+  }, 1000);
+
+  // 同时订阅后端每秒倒计时推送（作为备用同步机制）
   unlisten = await listen<number>("overlay-tick", (e) => {
     remaining.value = e.payload;
   });
@@ -104,6 +112,7 @@ onMounted(async () => {
 onUnmounted(() => {
   unlisten?.();
   if (hoverTimer) clearInterval(hoverTimer);
+  if (countdownTimer) clearInterval(countdownTimer);
 });
 
 // 遮罩样式：使用 CSS 变量 --bg-alpha 控制透明度
