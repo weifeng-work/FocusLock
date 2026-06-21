@@ -1,6 +1,6 @@
 [package]
 name = "focuslock"
-version = "0.1.9"
+version = "0.2.0"
 description = "自定义循环、到点即强休的跨平台专注助手"
 authors = ["FocusLock"]
 edition = "2021"

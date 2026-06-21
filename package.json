@@ -1,7 +1,7 @@
 {
   "name": "focuslock",
   "private": true,
-  "version": "0.1.9",
+  "version": "0.2.0",
   "type": "module",
   "description": "自定义循环、到点即强休的跨平台专注助手",
   "scripts": {
