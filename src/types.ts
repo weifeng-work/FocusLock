@@ -79,6 +79,8 @@ export interface Config {
   rest_messages: string[];
   /** 随机 / 固定轮询 */
   rest_message_mode: RestMessageMode;
+  /** 内置提示音变体（alarm/chime/digital/pulse/bird） */
+  builtin_sound_variant: string;
 }
 
 // 音效文件信息

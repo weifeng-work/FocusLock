@@ -284,6 +284,9 @@ pub struct Config {
     /// 休息文案展示模式（random / fixed）
     #[serde(default)]
     pub rest_message_mode: RestMessageMode,
+    /// 内置提示音变体（alarm / chime / digital / pulse / bird）
+    #[serde(default = "default_builtin_sound_variant")]
+    pub builtin_sound_variant: String,
 }
 
 // ==================== 默认值函数 ====================
@@ -297,6 +300,7 @@ fn default_notify_before() -> u32 { 1 }
 fn default_skip_shortcut() -> String { "CmdOrCtrl+Shift+F2".to_string() }
 fn default_language() -> String { "zh".to_string() }
 fn default_overlay_opacity() -> u8 { 95 }
+fn default_builtin_sound_variant() -> String { "alarm".to_string() }
 
 fn default_sound_none() -> SoundType { SoundType::None }
 fn default_sound_builtin() -> SoundType { SoundType::Builtin }
@@ -421,6 +425,7 @@ impl Default for Config {
             overlay_opacity:               default_overlay_opacity(),
             rest_messages:                 Vec::new(),
             rest_message_mode:             RestMessageMode::Random,
+            builtin_sound_variant:         default_builtin_sound_variant(),
         }
     }
 }

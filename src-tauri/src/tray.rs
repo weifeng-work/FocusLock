@@ -126,7 +126,7 @@ fn on_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
     }
 }
 
-/// 托盘图标交互：双击打开配置窗口
+/// 托盘图标交互：左键单击切换暂停/恢复
 fn on_tray_icon_event<R: Runtime>(
     tray: &tauri::tray::TrayIcon<R>,
     event: TrayIconEvent,
@@ -137,9 +137,21 @@ fn on_tray_icon_event<R: Runtime>(
         ..
     } = event
     {
-        // 左键单击打开配置窗口（双击在某些平台不灵敏，单击更可靠）
+        // 左键单击切换暂停/恢复
         let app = tray.app_handle().clone();
-        show_settings_window(&app);
+        let engine = match app.try_state::<EngineHandle>() {
+            Some(e) => e.inner().clone(),
+            None => return,
+        };
+        tauri::async_runtime::spawn(async move {
+            let (status, _, _) = engine.get_status().await;
+            let now = chrono::Utc::now().timestamp();
+            if status == Status::Paused {
+                engine.resume(now).await;
+            } else {
+                engine.pause(now).await;
+            }
+        });
     }
 }
 

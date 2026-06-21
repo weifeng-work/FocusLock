@@ -397,7 +397,7 @@ async fn tick_loop(
                             let sound = &scheme.work_end_sound;
                             let sound_str = match sound {
                                 SoundType::None => "none".to_string(),
-                                SoundType::Builtin => "builtin".to_string(),
+                                SoundType::Builtin => format!("builtin:{}", g.config.builtin_sound_variant),
                                 SoundType::Custom(f) => format!("custom:{}", f),
                             };
                             if sound_str != "none" {
