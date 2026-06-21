@@ -13,25 +13,55 @@ function getAudioContext(): AudioContext {
   return audioContext;
 }
 
-// 播放内置提示音（简单的"哔"声）
-export function playBuiltinSound(): void {
+// 播放内置提示音（闹钟式"滴滴答"声）
+// duration: 持续时间（秒），默认 10 秒
+// volume: 音量 (0-1)，默认 0.7 (70%)
+export function playBuiltinSound(duration: number = 10, volume: number = 0.7): void {
   try {
     const ctx = getAudioContext();
-    const oscillator = ctx.createOscillator();
-    const gainNode = ctx.createGain();
-
-    oscillator.connect(gainNode);
-    gainNode.connect(ctx.destination);
-
-    // 设置音调和音量
-    oscillator.frequency.value = 800; // 800Hz
-    oscillator.type = "sine"; // 正弦波，声音较柔和
-
-    gainNode.gain.setValueAtTime(0.3, ctx.currentTime); // 音量 30%
-    gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5); // 淡出
-
-    oscillator.start(ctx.currentTime);
-    oscillator.stop(ctx.currentTime + 0.5); // 播放 0.5 秒
+    const now = ctx.currentTime;
+    
+    // 创建主增益节点（控制总音量）
+    const masterGain = ctx.createGain();
+    masterGain.gain.value = volume;
+    masterGain.connect(ctx.destination);
+    
+    // 闹钟式提示音：800Hz 和 600Hz 交替，每秒 2 次
+    const beepDuration = 0.2; // 每次蜂鸣持续 0.2 秒
+    const beepInterval = 0.5; // 每次蜂鸣间隔 0.5 秒（包含 0.2 秒蜂鸣 + 0.3 秒静音）
+    const totalBeeps = Math.floor(duration / beepInterval);
+    
+    for (let i = 0; i < totalBeeps; i++) {
+      const beepTime = now + i * beepInterval;
+      const freq = i % 2 === 0 ? 800 : 600; // 交替频率
+      
+      const oscillator = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(masterGain);
+      
+      oscillator.frequency.value = freq;
+      oscillator.type = "sine";
+      
+      // 音量包络：快速淡入 + 淡出（避免爆音）
+      gainNode.gain.setValueAtTime(0, beepTime);
+      gainNode.gain.linearRampToValueAtTime(1, beepTime + 0.02);
+      gainNode.gain.setValueAtTime(1, beepTime + beepDuration - 0.02);
+      gainNode.gain.linearRampToValueAtTime(0, beepTime + beepDuration);
+      
+      oscillator.start(beepTime);
+      oscillator.stop(beepTime + beepDuration);
+    }
+    
+    // duration 后停止所有声音
+    setTimeout(() => {
+      masterGain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.1);
+      setTimeout(() => {
+        masterGain.disconnect();
+      }, 200);
+    }, duration * 1000);
+    
   } catch (e) {
     console.warn("播放内置提示音失败:", e);
   }
@@ -67,11 +97,13 @@ export async function playCustomSound(fileName: string): Promise<void> {
 }
 
 // 播放音效（根据配置）
-export async function playSound(soundType: string): Promise<void> {
+// duration: 持续时间（秒），默认 10 秒
+// volume: 音量 (0-1)，默认 0.7 (70%)
+export async function playSound(soundType: string, duration: number = 10, volume: number = 0.7): Promise<void> {
   if (soundType === "none") return;
 
   if (soundType === "builtin") {
-    playBuiltinSound();
+    playBuiltinSound(duration, volume);
     return;
   }
 
@@ -87,11 +119,12 @@ export async function playSound(soundType: string): Promise<void> {
 
 // 解析并播放音效事件
 // eventData 格式: "work_end:builtin" 或 "rest_end:custom:文件名"
+// 使用默认参数：duration=10秒, volume=0.7 (70%)
 export async function handlePlaySoundEvent(eventData: string): Promise<void> {
   // eventData 格式: "work_end:builtin" 或 "rest_end:custom:文件名"
   const parts = eventData.split(":");
   if (parts.length < 2) return;
 
   const soundValue = parts.slice(1).join(":"); // 支持文件名中包含 ":"
-  await playSound(soundValue);
+  await playSound(soundValue, 10, 0.7);
 }

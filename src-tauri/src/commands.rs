@@ -344,3 +344,10 @@ pub fn open_external_url(url: String) -> Result<(), String> {
     webbrowser::open(&url)
         .map_err(|e| format!("无法打开链接: {}", e))
 }
+
+/// 获取应用版本号（从 tauri.conf.json 读取）
+#[tauri::command]
+pub fn get_version(app: tauri::AppHandle) -> Result<String, String> {
+    let version = app.config().version.clone().unwrap_or_else(|| "0.0.0".into());
+    Ok(version)
+}

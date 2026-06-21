@@ -36,6 +36,14 @@ fn bootstrap_state(config: &Config) -> (AppState, i64) {
     let now = Utc::now().timestamp();
     let threshold_secs = u64::from(config.reset_threshold_minutes) * 60;
 
+    // 边界检查：确保 config.stages 非空
+    if config.stages.is_empty() {
+        tracing::warn!("config.stages 为空，使用默认方案的第一阶段");
+        let default_config = Config::default();
+        let total = stage_total_seconds(&default_config, 0);
+        return (AppState::fresh_first_stage(total, now), now);
+    }
+
     match AppState::load() {
         None => {
             tracing::info!("无 state，全新启动，进入阶段 0。");
@@ -52,6 +60,22 @@ fn bootstrap_state(config: &Config) -> (AppState, i64) {
                 ResetVerdict::No => {
                     // 恢复
                     let mut s = s;
+                    
+                    // 边界检查：确保 current_stage_index 在有效范围内
+                    if s.current_stage_index >= config.stages.len() {
+                        tracing::warn!(
+                            "current_stage_index ({}) 超出 stages 长度 ({})，重置到阶段 0",
+                            s.current_stage_index,
+                            config.stages.len()
+                        );
+                        let total = stage_total_seconds(config, 0);
+                        s.current_stage_index = 0;
+                        s.remaining_seconds = total;
+                        s.status = Status::Running;
+                        let started = now;
+                        return (s, started);
+                    }
+                    
                     let total = stage_total_seconds(config, s.current_stage_index);
                     if s.status == Status::Paused {
                         // 产品约定：暂停状态重启后自动恢复 Running（从冻结 remaining 继续）
@@ -243,6 +267,7 @@ pub fn run() {
             commands::delete_sound_file,
             commands::get_app_data_dir,
             commands::open_external_url,
+            commands::get_version,
         ])
         .run(tauri::generate_context!())
         .expect("FocusLock 启动失败");

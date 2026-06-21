@@ -32,12 +32,24 @@ const uploading = ref(false);
 // 检查更新
 const checkingUpdate = ref(false);
 const updateResult = ref<{ type: "ok" | "warn" | "err" | "info"; text: string } | null>(null);
-const currentVersion = ref("0.1.3");
+const currentVersion = ref("加载中...");
+
+// 加载版本号
+async function loadVersion() {
+  try {
+    const version = await invoke<string>("get_version");
+    currentVersion.value = version;
+  } catch (e) {
+    console.warn("获取版本号失败:", e);
+    currentVersion.value = "未知";
+  }
+}
 
 // ============== 加载 ==============
 async function load() {
   config.value = await invoke<Config>("get_config");
   await loadSoundFiles();
+  await loadVersion();
 }
 
 async function loadSoundFiles() {

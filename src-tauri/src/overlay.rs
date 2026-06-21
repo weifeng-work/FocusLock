@@ -105,7 +105,8 @@ impl OverlayManager {
             let msg_enc = url_encode(&message);
             let url = format!(
                 "/#/overlay?primary={}&remaining={}&opacity={}&msg={}",
-                mon.is_primary, remaining, opacity, msg_enc
+                if mon.is_primary { "1" } else { "0" },
+                remaining, opacity, msg_enc
             );
             match self.create_overlay_window(app, &label, mon, &url, true).await {
                 Ok(()) => {
@@ -224,6 +225,9 @@ pub fn spawn_hotplug_watcher(
             }
             // 检查显示器数量变化，补罩
             let monitors = create_capabilities().monitor.list_monitors();
+            let opacity = *manager.overlay_opacity.lock().await;
+            let message = manager.overlay_message.lock().await.clone();
+            let msg_enc = url_encode(&message);
             let mut wins = manager.windows.lock().await;
             for (idx, mon) in monitors.iter().enumerate() {
                 let label = format!("{}{}", OVERLAY_PREFIX, idx);
@@ -231,8 +235,9 @@ pub fn spawn_hotplug_watcher(
                     // 新增显示器，补罩
                     drop(wins);
                     let url = format!(
-                        "/#/overlay?primary={}&remaining=0",
-                        mon.is_primary
+                        "/#/overlay?primary={}&remaining=0&opacity={}&msg={}",
+                        if mon.is_primary { "1" } else { "0" },
+                        opacity, msg_enc
                     );
                     if let Ok(()) = manager
                         .create_overlay_window(&app, &label, mon, &url, true)
