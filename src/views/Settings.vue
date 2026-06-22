@@ -601,11 +601,17 @@ function clampMin(v: number, min: number, max: number): number {
                 @change="setSchemeSoundType('work_end_sound', 'builtin')" />
               {{ t("settings.soundBuiltin") }}
               <select v-if="getSoundTypeValue(currentScheme.work_end_sound) === 'builtin'"
-                v-model.number="config.builtin_sound_variant"
+                v-model="config.builtin_sound_variant"
                 class="variant-select"
                 style="margin-left:8px;padding:2px 6px;font-size:12px;border-radius:4px;border:0.5px solid #b4b2a9;">
                 <option v-for="v in builtinSoundVariants" :key="v.value" :value="v.value">{{ v.label }}</option>
               </select>
+              <button v-if="getSoundTypeValue(currentScheme.work_end_sound) === 'builtin'"
+                class="btn-sm preview-btn"
+                @click="playBuiltinSound(config.builtin_sound_variant || 'alarm', 3, 0.5)"
+                style="margin-left:6px;padding:2px 8px;font-size:11px;background:#e8f0fe;color:#1a73e8;border:1px solid #1a73e8;border-radius:4px;cursor:pointer;">
+                ▶ 试听
+              </button>
             </label>
             <label class="radio" v-if="soundFiles.length > 0">
               <input type="radio" :checked="getSoundTypeValue(currentScheme.work_end_sound) !== 'none' && getSoundTypeValue(currentScheme.work_end_sound) !== 'builtin'"
@@ -633,11 +639,17 @@ function clampMin(v: number, min: number, max: number): number {
                 @change="setSchemeSoundType('rest_end_sound', 'builtin')" />
               {{ t("settings.soundBuiltin") }}
               <select v-if="getSoundTypeValue(currentScheme.rest_end_sound) === 'builtin'"
-                v-model.number="config.builtin_sound_variant"
+                v-model="config.builtin_sound_variant"
                 class="variant-select"
                 style="margin-left:8px;padding:2px 6px;font-size:12px;border-radius:4px;border:0.5px solid #b4b2a9;">
                 <option v-for="v in builtinSoundVariants" :key="v.value" :value="v.value">{{ v.label }}</option>
               </select>
+              <button v-if="getSoundTypeValue(currentScheme.rest_end_sound) === 'builtin'"
+                class="btn-sm preview-btn"
+                @click="playBuiltinSound(config.builtin_sound_variant || 'alarm', 3, 0.5)"
+                style="margin-left:6px;padding:2px 8px;font-size:11px;background:#e8f0fe;color:#1a73e8;border:1px solid #1a73e8;border-radius:4px;cursor:pointer;">
+                ▶ 试听
+              </button>
             </label>
             <label class="radio" v-if="soundFiles.length > 0">
               {{ t("settings.soundCustom") }}：
