@@ -13,6 +13,7 @@ import type {
   Config, Scheme, Stage, StageType, Routine, TimePeriod,
   PeriodEndAction, OverlayStyle, SoundType, WeeklyAssignment,
 } from "../types";
+import { playBuiltinSound } from "../utils/sound";
 
 const { currentLocale, setLocale, t } = useI18n();
 
@@ -188,6 +189,15 @@ function moveDown(i: number) {
 
 const hasWork = computed(() => currentScheme.value?.stages.some((s) => s.type === "work") ?? false);
 const stagesValid = computed(() => (currentScheme.value?.stages.length ?? 0) > 0 && hasWork.value);
+
+// ============== 内置音效变体列表 ==============
+const builtinSoundVariants = [
+  { value: "alarm", label: "闹钟声 (alarm)", desc: "800Hz/600Hz 交替滴滴答，强提醒" },
+  { value: "chime", label: "风铃声 (chime)", desc: "三音叠加琶音，温和提醒" },
+  { value: "digital", label: "电子哔 (digital)", desc: "方波双音，科技感" },
+  { value: "pulse", label: "柔和脉冲 (pulse)", desc: "400Hz 正弦波脉冲，不刺耳" },
+  { value: "bird", label: "鸟鸣声 (bird)", desc: "频率调制啁啾声，轻松氛围" },
+];
 
 // ============== 提示音辅助 ==============
 function getSoundTypeValue(sound: SoundType): string {
@@ -588,6 +598,12 @@ function clampMin(v: number, min: number, max: number): number {
               <input type="radio" :checked="getSoundTypeValue(currentScheme.work_end_sound) === 'builtin'"
                 @change="setSchemeSoundType('work_end_sound', 'builtin')" />
               {{ t("settings.soundBuiltin") }}
+              <select v-if="getSoundTypeValue(currentScheme.work_end_sound) === 'builtin'"
+                v-model.number="config.builtin_sound_variant"
+                class="variant-select"
+                style="margin-left:8px;padding:2px 6px;font-size:12px;border-radius:4px;border:0.5px solid #b4b2a9;">
+                <option v-for="v in builtinSoundVariants" :key="v.value" :value="v.value">{{ v.label }}</option>
+              </select>
             </label>
             <label class="radio" v-if="soundFiles.length > 0">
               <input type="radio" :checked="getSoundTypeValue(currentScheme.work_end_sound) !== 'none' && getSoundTypeValue(currentScheme.work_end_sound) !== 'builtin'"
@@ -614,6 +630,12 @@ function clampMin(v: number, min: number, max: number): number {
               <input type="radio" :checked="getSoundTypeValue(currentScheme.rest_end_sound) === 'builtin'"
                 @change="setSchemeSoundType('rest_end_sound', 'builtin')" />
               {{ t("settings.soundBuiltin") }}
+              <select v-if="getSoundTypeValue(currentScheme.rest_end_sound) === 'builtin'"
+                v-model.number="config.builtin_sound_variant"
+                class="variant-select"
+                style="margin-left:8px;padding:2px 6px;font-size:12px;border-radius:4px;border:0.5px solid #b4b2a9;">
+                <option v-for="v in builtinSoundVariants" :key="v.value" :value="v.value">{{ v.label }}</option>
+              </select>
             </label>
             <label class="radio" v-if="soundFiles.length > 0">
               {{ t("settings.soundCustom") }}：
@@ -879,6 +901,22 @@ function clampMin(v: number, min: number, max: number): number {
             :placeholder="t('settings.restMessagesPlaceholder')"
           />
           <p class="hint">{{ t("settings.restMessagesHint") }}</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>内置提示音变体</h2>
+        <p class="hint">选择"内置提示音"时使用的音效类型。所有使用内置提示音的场景（工作结束、休息结束、时段结束）均使用此设置。</p>
+        <div class="field">
+          <label style="min-width:120px;">音效风格</label>
+          <select v-model="config.builtin_sound_variant" style="max-width:280px;padding:6px 10px;border-radius:4px;border:0.5px solid #b4b2a9;font-size:13px;">
+            <option v-for="v in builtinSoundVariants" :key="v.value" :value="v.value">
+              {{ v.label }} — {{ v.desc }}
+            </option>
+          </select>
+        </div>
+        <div class="builtin-sound-preview">
+          <button class="btn-sm" @click="playBuiltinSound(config.builtin_sound_variant || 'alarm', 3, 0.5)" style="margin-top:4px;">▶ 试听 3 秒</button>
         </div>
       </section>
     </div>
