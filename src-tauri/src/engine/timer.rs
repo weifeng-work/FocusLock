@@ -170,10 +170,44 @@ impl EngineHandle {
 
     /// 重置到第一阶段（用户托盘「重置计时」或配置变更后触发）。
     /// 重新读 config（由调用方传入新 config）。
+    /// 会根据周配置（weekly）自动解析今天应使用的作息表和方案，
+    /// 而不是固定使用 config.stages（旧的单方案模式）。
     pub async fn reset_to_first(&self, new_config: Config, now: i64) {
         let mut g = self.inner.lock().await;
+
+        // 根据周配置解析今天应使用的作息表和方案
+        let now_local = chrono::Local::now();
+        let target = new_config.resolve_current_schedule(now_local);
+
         g.config = new_config;
-        g.enter_stage(0, now);
+
+        match target {
+            Some((ref scheme_id, period_idx)) => {
+                // 找到了今天当前时段对应的方案
+                g.state.scheme_id = scheme_id.clone();
+                g.current_routine_id = Some(g.config.weekly.get_routine_id(now_local.weekday()).to_string());
+                g.current_period_idx = Some(period_idx);
+                g.refresh_cached_stages();
+                g.enter_stage(0, now);
+            }
+            None => {
+                // 今天不在任何时间段内，或者没有周配置
+                // 回退到默认行为：使用第一个方案的 stages
+                if let Some(ref default_scheme) = g.config.schemes.first() {
+                    g.state.scheme_id = default_scheme.id.clone();
+                    g.refresh_cached_stages();
+                    g.enter_stage(0, now);
+                } else {
+                    // 极端情况：没有任何方案，使用 config.stages（兼容旧数据）
+                    g.cached_stages = g.config.stages.clone();
+                    g.state.scheme_id = "__legacy__".to_string();
+                    g.enter_stage(0, now);
+                }
+                g.current_routine_id = None;
+                g.current_period_idx = None;
+            }
+        }
+
         let remaining = g.state.remaining_seconds;
         let _ = g.persist();
         drop(g);

@@ -63,6 +63,46 @@ async function loadSoundFiles() {
 
 onMounted(load);
 
+// ============= 当前生效配置状态 =============
+const currentSchedule = ref<{
+  weekday: number;
+  weekday_name: string;
+  todays_routine_id: string;
+  todays_routine_name: string;
+  current_period_idx: number | null;
+  current_scheme_id: string;
+  current_scheme_name: string;
+  in_schedule: boolean;
+} | null>(null);
+
+async function refreshCurrentSchedule() {
+  try {
+    const data = await invoke<any>("get_current_schedule");
+    currentSchedule.value = data;
+  } catch (e) {
+    console.warn("获取当前配置状态失败:", e);
+  }
+}
+
+// 切换 Tab 时刷新状态
+function onTabChange(tab: string) {
+  activeTab.value = tab as any;
+  if (tab === "weekly") {
+    refreshCurrentSchedule();
+  }
+}
+
+// 应用周配置（手动触发）
+async function onApplyWeekly() {
+  try {
+    await invoke("apply_weekly_day");
+    message.value = { type: "ok", text: "已应用周配置，计时已重置" };
+    refreshCurrentSchedule();
+  } catch (e) {
+    message.value = { type: "err", text: `应用失败：${String(e)}` };
+  }
+}
+
 const currentScheme = computed<Scheme | undefined>(() => {
   return config.value?.schemes[currentSchemeIndex.value];
 });
@@ -504,19 +544,19 @@ function clampMin(v: number, min: number, max: number): number {
 
     <!-- Tab 切换 -->
     <div class="tab-bar">
-      <button :class="['tab', { active: activeTab === 'scheme' }]" @click="activeTab = 'scheme'">
+      <button :class="['tab', { active: activeTab === 'scheme' }]" @click="onTabChange('scheme')">
         {{ t("settings.tabs.scheme") }}
       </button>
-      <button :class="['tab', { active: activeTab === 'routine' }]" @click="activeTab = 'routine'">
+      <button :class="['tab', { active: activeTab === 'routine' }]" @click="onTabChange('routine')">
         {{ t("settings.tabs.routine") }}
       </button>
-      <button :class="['tab', { active: activeTab === 'weekly' }]" @click="activeTab = 'weekly'">
+      <button :class="['tab', { active: activeTab === 'weekly' }]" @click="onTabChange('weekly')">
         {{ t("settings.tabs.weekly") }}
       </button>
-      <button :class="['tab', { active: activeTab === 'system' }]" @click="activeTab = 'system'">
+      <button :class="['tab', { active: activeTab === 'system' }]" @click="onTabChange('system')">
         {{ t("settings.tabs.system") }}
       </button>
-      <button :class="['tab', { active: activeTab === 'about' }]" @click="activeTab = 'about'">
+      <button :class="['tab', { active: activeTab === 'about' }]" @click="onTabChange('about')">
         {{ t("settings.about") }}
       </button>
     </div>
@@ -802,8 +842,19 @@ function clampMin(v: number, min: number, max: number): number {
       </section>
     </div>
 
-    <!-- =================== Tab 3: 周配置 =================== -->
+    <!-- ================== Tab 3: 周配置 ================== -->
     <div v-show="activeTab === 'weekly'">
+      <!-- 当前生效状态 -->
+      <section v-if="currentSchedule" style="background:#f0f9ff; border:1px solid #b3d4fc; border-radius:8px; padding:12px 16px; margin-bottom:16px;">
+        <h3 style="margin:0 0 8px 0; font-size:14px; color:#1a73e8;">当前生效状态</h3>
+        <div style="display:flex; flex-wrap:wrap; gap:8px 20px; font-size:13px; color:#333;">
+          <div>📅 今天：<b>{{ currentSchedule.weekday_name }}</b></div>
+          <div>📋 今日作息表：<b>{{ currentSchedule.todays_routine_name }}</b></div>
+          <div v-if="currentSchedule.in_schedule">✅ 当前方案：<b>{{ currentSchedule.current_scheme_name }}</b></div>
+          <div v-else style="color:#e65100;">⚠️ 当前不在任何时间段内</div>
+        </div>
+      </section>
+
       <section>
         <h2>{{ t("settings.weekly.title") }}</h2>
         <p class="hint">{{ t("settings.weekly.hint") }}</p>
@@ -844,6 +895,10 @@ function clampMin(v: number, min: number, max: number): number {
               }
             }
           }">周末统一</button>
+          <button class="btn-sm" @click="onApplyWeekly" style="background:#185fa5; color:#fff; border:none; border-radius:4px; padding:4px 12px; cursor:pointer;">
+            ✓ 应用该配置
+          </button>
+          <span class="hint" style="margin-left:8px;">应用后计时将按今日作息表重新启动</span>
         </div>
       </section>
     </div>

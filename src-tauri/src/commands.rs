@@ -5,9 +5,10 @@
 
 use crate::engine::EngineHandle;
 use crate::state::Status;
-use base64::Engine;
-use chrono::Utc;
+use crate::config::{Config, WeeklyAssignment};
+use chrono::{Datelike, Local, Utc};
 use serde::Serialize;
+use serde_json::Value;
 
 /// 检查更新响应
 #[derive(Debug, Clone, Serialize)]
@@ -91,6 +92,106 @@ pub async fn skip_rest(engine: tauri::State<'_, EngineHandle>) -> Result<bool, S
 #[tauri::command]
 pub async fn reset_timer(engine: tauri::State<'_, EngineHandle>) -> Result<(), String> {
     // 重新读取配置（可能已被前端修改保存）
+    let (config, _fallback) = crate::config::Config::load();
+    let now = Utc::now().timestamp();
+    engine.reset_to_first(config, now).await;
+    Ok(())
+}
+
+/// 当前生效的周配置/作息表/方案信息（前端状态栏展示用）
+#[derive(Debug, Clone, Serialize)]
+pub struct CurrentScheduleResponse {
+    /// 今天是星期几（0=周日，1=周一，...，6=周六）
+    pub weekday: u32,
+    pub weekday_name: String,
+    /// 当前周配置中，今天对应的作息表 ID
+    pub todays_routine_id: String,
+    /// 当前周配置中，今天对应的作息表名称
+    pub todays_routine_name: String,
+    /// 当前作息表中，正在生效的时间段索引（如果当前在任何时间段内）
+    pub current_period_idx: Option<usize>,
+    /// 当前生效的方案 ID
+    pub current_scheme_id: String,
+    /// 当前生效的方案名称
+    pub current_scheme_name: String,
+    /// 当前是否在任何时间段内
+    pub in_schedule: bool,
+}
+
+fn weekday_name(wd: u32) -> &'static str {
+    match wd {
+        0 => "周日",
+        1 => "周一",
+        2 => "周二",
+        3 => "周三",
+        4 => "周四",
+        5 => "周五",
+        6 => "周六",
+        _ => "未知",
+    }
+}
+
+/// 获取当前生效的周配置/作息表/方案信息
+#[tauri::command]
+pub async fn get_current_schedule(
+    engine: tauri::State<'_, EngineHandle>,
+) -> Result<CurrentScheduleResponse, String> {
+    let inner = engine.inner.lock().await;
+    let now_local = Local::now();
+    let wd = now_local.weekday().num_days_from_sunday(); // 0=周日
+
+    let config = &inner.config;
+    let todays_routine_id = config.weekly.get_routine_id(now_local.weekday()).to_string();
+    let todays_routine_name = config
+        .routines
+        .iter()
+        .find(|r| r.id == todays_routine_id)
+        .map(|r| r.name.clone())
+        .unwrap_or_else(|| "(未找到)".to_string());
+
+    let target = config.resolve_current_schedule(now_local);
+    match target {
+        Some((ref scheme_id, period_idx)) => {
+            let scheme_name = config
+                .schemes
+                .iter()
+                .find(|s| s.id == *scheme_id)
+                .map(|s| s.name.clone())
+                .unwrap_or_else(|| "(未找到)".to_string());
+
+            Ok(CurrentScheduleResponse {
+                weekday: wd,
+                weekday_name: weekday_name(wd).to_string(),
+                todays_routine_id,
+                todays_routine_name,
+                current_period_idx: Some(period_idx),
+                current_scheme_id: scheme_id.clone(),
+                current_scheme_name: scheme_name,
+                in_schedule: true,
+            })
+        }
+        None => {
+            // 不在任何时间段内，但仍显示今天的作息表
+            Ok(CurrentScheduleResponse {
+                weekday: wd,
+                weekday_name: weekday_name(wd).to_string(),
+                todays_routine_id,
+                todays_routine_name,
+                current_period_idx: None,
+                current_scheme_id: "(无)".to_string(),
+                current_scheme_name: "(当前不在任何时间段内)".to_string(),
+                in_schedule: false,
+            })
+        }
+    }
+}
+
+/// 应用指定周配置的某一天（让用户可以手动切换某天的作息表）
+/// 调用后，引擎会重新根据周配置初始化
+#[tauri::command]
+pub async fn apply_weekly_day(
+    engine: tauri::State<'_, EngineHandle>,
+) -> Result<(), String> {
     let (config, _fallback) = crate::config::Config::load();
     let now = Utc::now().timestamp();
     engine.reset_to_first(config, now).await;

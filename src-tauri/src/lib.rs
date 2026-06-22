@@ -248,6 +248,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_status,
+            commands::get_current_schedule,
+            commands::apply_weekly_day,
             commands::pause,
             commands::resume,
             commands::skip_rest,
