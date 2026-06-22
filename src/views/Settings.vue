@@ -210,10 +210,12 @@ function getSoundTypeValue(sound: SoundType): string {
 }
 
 function setSchemeSoundType(soundRef: "work_end_sound" | "rest_end_sound", value: string) {
-  if (!currentScheme.value) return;
-  if (value === "none") currentScheme.value[soundRef] = "none";
-  else if (value === "builtin") currentScheme.value[soundRef] = "builtin";
-  else currentScheme.value[soundRef] = { custom: value } as SoundType;
+  if (!config.value || currentSchemeIndex.value < 0) return;
+  const scheme = config.value.schemes[currentSchemeIndex.value];
+  if (!scheme) return;
+  if (value === "none") scheme[soundRef] = "none";
+  else if (value === "builtin") scheme[soundRef] = "builtin";
+  else scheme[soundRef] = { custom: value } as SoundType;
 }
 
 async function onUploadSound() {
