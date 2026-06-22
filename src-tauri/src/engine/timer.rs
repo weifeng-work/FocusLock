@@ -14,12 +14,12 @@
 // 由 Tauri command 层调用。事件通过 emit 回调发出，由上层桥接到 Tauri event 或通知。
 
 use crate::config::{
-    Config, OverlayStyle, PeriodEndAction, RestReminderMode, Scheme,
+    Config, PeriodEndAction, RestReminderMode, Scheme,
     SoundType, Stage, StageType,
 };
 use crate::engine::stage::StageCursor;
 use crate::state::{AppState, Status};
-use chrono::{DateTime, Datelike, Local, Timelike, Utc};
+use chrono::{DateTime, Datelike, Local, Utc};
 use serde::Serialize;
 use std::sync::Arc;
 use std::time::Duration;

@@ -8,7 +8,7 @@
 
 use crate::engine::EngineHandle;
 use crate::state::Status;
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Runtime};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 /// 注册跳过休息快捷键。在 setup 阶段调用。

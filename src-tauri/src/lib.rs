@@ -133,7 +133,7 @@ pub fn run() {
 
     tracing::info!("FocusLock 启动中…");
 
-    let mut builder = tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             tracing::info!("检测到重复启动，已忽略。");
             if let Some(win) = app.get_webview_window("main") {
@@ -147,17 +147,10 @@ pub fn run() {
 
     // autostart 插件：仅 macOS 需要 MacosLauncher，Windows 不需要
     #[cfg(target_os = "macos")]
-    {
-        builder = builder.plugin(tauri_plugin_autostart::init(
-            Some(tauri_plugin_autostart::MacosLauncher::LaunchAgent),
-            None,
-        ));
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        // Windows: 不加载 autostart 插件（用户可手动配置开机启动）
-        // 如需 Windows 开机启动，可通过注册表实现，不依赖此插件
-    }
+    let builder = builder.plugin(tauri_plugin_autostart::init(
+        Some(tauri_plugin_autostart::MacosLauncher::LaunchAgent),
+        None,
+    ));
 
     builder
         .setup(|app| {

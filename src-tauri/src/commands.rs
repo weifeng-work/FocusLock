@@ -318,7 +318,6 @@ pub async fn get_app_data_dir() -> Result<String, String> {
 /// 读取音效文件并返回 base64 编码
 #[tauri::command]
 pub async fn read_sound_file(file_name: String) -> Result<String, String> {
-    use std::path::Path;
     use tokio::fs;
 
     let sounds_dir = crate::config::Config::data_dir().join("sounds");

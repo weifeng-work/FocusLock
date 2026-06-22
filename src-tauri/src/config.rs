@@ -6,7 +6,7 @@
 // - 读写 + 原子写 + 校验 + 非法回退默认
 // - 配置改后不自动生效（保存只写文件，需「重置计时」或重启才生效）
 
-use chrono::{DateTime, Datelike, Duration, Local, NaiveDateTime, NaiveTime, TimeZone, Timelike};
+use chrono::{DateTime, Datelike, Duration, Local, NaiveDateTime, NaiveTime, TimeZone};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
@@ -623,6 +623,7 @@ impl OldConfig {
             overlay_opacity:               default_overlay_opacity(),
             rest_messages:                 Vec::new(),
             rest_message_mode:             RestMessageMode::Random,
+            builtin_sound_variant:         default_builtin_sound_variant(),
         }
     }
 }
