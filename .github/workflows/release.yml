@@ -30,24 +30,9 @@ jobs:
 
       # 项目级 .cargo/config.toml 使用 rsproxy 国内镜像
       # CI 环境改为使用 crates.io 官方源，启用 sparse 协议（更稳定）
-      - name: 覆盖 cargo 源为 crates.io（CI 环境）
+      - name: 配置 cargo 源（CI 环境）
         shell: pwsh
-        run: |
-          $configPath = ".cargo/config.toml"
-          if (Test-Path $configPath) {
-            Remove-Item $configPath -Force
-            Write-Host "已移除项目级 cargo 配置，使用默认 crates.io 源"
-          }
-          # 创建 CI 专用的 cargo 配置，启用 sparse 协议（避免 git index 克隆超时）
-          $ciConfigDir = ".cargo"
-          if (-not (Test-Path $ciConfigDir)) {
-            New-Item -ItemType Directory -Path $ciConfigDir -Force | Out-Null
-          }
-          @"
-          [registries.crates-io]
-          protocol = "sparse"
-"@ | Out-File -FilePath "$ciConfigDir/config.toml" -Encoding UTF8
-          Write-Host "已创建 CI cargo 配置，启用 sparse 协议"
+        run: .github/scripts/setup-cargo-ci.ps1
 
       - name: 设置 cargo sparse 协议环境变量（双重保险）
         shell: pwsh
